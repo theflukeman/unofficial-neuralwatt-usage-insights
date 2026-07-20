@@ -1210,7 +1210,7 @@ function renderCharts() {
                 {
                     label: 'Uncached Tokens',
                     data: calculatedTimelineSorted.map(d => d.tokens - (d.cached_tokens || 0)),
-                    backgroundColor: chartColors.secondary,
+                    backgroundColor: chartColors.terracotta,
                     stack: 'Stack 0',
                     order: 2
                 },
