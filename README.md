@@ -22,8 +22,8 @@ table — with energy/cost/savings and carbon-footprint projections.
   - Token Cache Performance
   - Cost per Million Tokens vs. Cost per Request
 - **Cost modeling** — energy-cost base selection (flat / monthly / annual plans, custom
-  $/kWh, or JSON-provided cost) plus third-party rate comparison
-  (auto-match against OpenRouter live prices or custom $/Mtok rates).
+  \$/kWh, or JSON-provided cost) plus third-party rate comparison
+  (auto-match against OpenRouter live prices or custom \$/Mtok rates).
 - **Granular logs** — sortable, searchable per-cycle table with CSV export of the
   current view.
 - **Light / Dark theme** toggle (defaults to dark). Fully responsive.
