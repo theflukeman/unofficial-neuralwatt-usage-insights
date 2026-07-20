@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unofficial Neuralwatt Usage Insights</title>
+    
+    <!-- Premium Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- CSS File -->
+    <link rel="stylesheet" href="index.css">
+    
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body class="dark-mode"> <!-- Default to Dark Mode for premium aesthetic -->
+    <div class="app-container">
+        
+        <!-- Header -->
+        <header class="main-header">
+            <div class="header-left">
+                <div class="logo-area">
+                    <span class="logo-accent">⚡</span>
+                    <h1>Unofficial Neuralwatt <span class="logo-sub">Usage Insights</span></h1>
+                </div>
+                <div class="header-badge" id="period-badge" style="display: none;">
+                    No file loaded
+                </div>
+            </div>
+            
+            <div class="header-right">
+                <!-- Mini Uploader (visible only when data is loaded) -->
+                <div class="mini-upload" id="mini-upload-btn" style="display: none;">
+                    <label for="mini-file-input" class="btn btn-secondary btn-sm">
+                        <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Add Model JSON
+                    </label>
+                    <input type="file" id="mini-file-input" accept=".json" multiple style="display: none;">
+                </div>
+                
+                <!-- Theme Toggle -->
+                <button class="theme-toggle" id="theme-toggle-btn" aria-label="Toggle Theme">
+                    <svg class="sun-icon icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <svg class="moon-icon icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Blank State / Main Upload Container -->
+        <section class="upload-section" id="upload-container">
+            <div class="upload-card">
+                <div class="upload-icon">⚡</div>
+                <h2>Import Usage Analytics</h2>
+                <div style="font-size: 0.7rem; color: var(--accent-terracotta); font-weight: 700; text-transform: uppercase; margin-bottom: 0.75rem; letter-spacing: 0.75px;">Unofficial 3rd-Party Utility</div>
+                <p>Drag and drop single-model Neuralwatt JSON exports here (upload multiple to combine), or click to browse files.</p>
+                
+                <div class="directions-list">
+                    <h4>How to Get Your Data:</h4>
+                    <ol>
+                        <li>Go to your <a href="https://portal.neuralwatt.com/dashboard/usage" target="_blank" rel="noopener">Neuralwatt Usage Analytics Portal</a>.</li>
+                        <li>Select your desired date range and a <strong>single model</strong>.</li>
+                        <li>Export the file as a <strong>JSON</strong> export.</li>
+                        <li>Repeat for as many models as you want.</li>
+                        <li>Drop those files below for multi-model aggregation and analysis!</li>
+                    </ol>
+                </div>
+                
+                <div class="drop-zone" id="drop-zone">
+                    <svg class="drop-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <span>Drop exported model JSON files here</span>
+                    <label for="main-file-input" class="btn btn-primary">Browse Files</label>
+                    <input type="file" id="main-file-input" accept=".json" multiple style="display: none;">
+                </div>
+                
+                <div class="hint-text">
+                    Only <code>.json</code> exports are supported. Your data stays completely in your browser and is never uploaded to any server.
+                </div>
+            </div>
+        </section>
+
+        <!-- Dashboard Content Container (Initially Hidden) -->
+        <main class="dashboard-content" id="dashboard-container" style="display: none;">
+            
+            <!-- Dashboard Controls -->
+            <section class="controls-panel">
+                <div class="controls-left">
+                    <div class="control-group">
+                        <label for="model-filter-select">Filter by Model</label>
+                        <select id="model-filter-select" class="control-select">
+                            <option value="">All Models</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="start-date-filter">Start Date</label>
+                        <input type="date" id="start-date-filter" class="control-input" style="width: 140px; cursor: pointer; font-family: var(--font-body);">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="end-date-filter">End Date</label>
+                        <input type="date" id="end-date-filter" class="control-input" style="width: 140px; cursor: pointer; font-family: var(--font-body);">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="cost-calc-mode">Energy Cost Base</label>
+                        <select id="cost-calc-mode" class="control-select">
+                            <option value="flat-10" selected>Flat $10.00 / kWh</option>
+                            <optgroup label="Monthly Plans">
+                                <option value="plan-basic">Basic Plan ($8.50 / kWh)</option>
+                                <option value="plan-std">Standard Plan ($8.00 / kWh)</option>
+                                <option value="plan-pro">Pro Plan ($7.50 / kWh)</option>
+                            </optgroup>
+                            <optgroup label="Annual Plans (2 Months Free)">
+                                <option value="plan-basic-yr">Basic Annual (~$7.08 / kWh)</option>
+                                <option value="plan-std-yr">Standard Annual (~$6.67 / kWh)</option>
+                                <option value="plan-pro-yr">Pro Annual ($6.25 / kWh)</option>
+                            </optgroup>
+                            <optgroup label="Other Options">
+                                <option value="json">Use Cost from JSON</option>
+                                <option value="custom">Custom Rate ($/kWh)...</option>
+                            </optgroup>
+                        </select>
+                    </div>
+
+                    <div id="custom-rate-container" style="display: none;" class="control-group">
+                        <label for="custom-rate-input">Custom $/kWh</label>
+                        <div class="custom-input-wrapper">
+                            <input type="number" id="custom-rate-input" value="10.00" step="0.01" min="0" class="control-input">
+                            <span>/ kWh</span>
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="third-party-provider">Third-Party Compare Rate</label>
+                        <select id="third-party-provider" class="control-select">
+                            <option value="auto-match" selected>Auto-Match (OpenRouter Live)</option>
+                            <option value="custom-rates">Custom Rates ($/Mtok)...</option>
+                            <!-- Dynamic OpenRouter models appended here -->
+                        </select>
+                    </div>
+                    
+                    <div id="custom-third-party-container" style="display: none; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end;">
+                        <div class="control-group">
+                            <label for="custom-tp-input">Input Cost ($/M)</label>
+                            <input type="number" id="custom-tp-input" value="1.00" step="0.01" min="0" class="control-input" style="width: 100px;">
+                        </div>
+                        <div class="control-group">
+                            <label for="custom-tp-cache">Cache Cost ($/M)</label>
+                            <input type="number" id="custom-tp-cache" value="0.50" step="0.01" min="0" class="control-input" style="width: 100px;">
+                        </div>
+                        <div class="control-group">
+                            <label for="custom-tp-output">Output Cost ($/M)</label>
+                            <input type="number" id="custom-tp-output" value="3.00" step="0.01" min="0" class="control-input" style="width: 100px;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="controls-right">
+                    <div class="control-group" style="width: 100%;">
+                        <label>Imported Model Files</label>
+                        <div id="imported-models-list" class="imported-models-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="methodology-note">
+                    <strong>Methodology Note:</strong> Segment-level prompt and completion token splits are estimated by applying the cycle's aggregate token ratio to each segment's totals, then subtracting known cache volumes to calculate uncached inputs.
+                </div>
+            </section>
+            
+            <!-- Summary Stats Cards -->
+            <div class="stats-grid">
+                <!-- Requests Card -->
+                <div class="stat-card">
+                    <div class="card-header">
+                        <span class="card-title">Total Requests</span>
+                        <div class="card-icon blue-bg">⚡</div>
+                    </div>
+                    <div class="card-value" id="val-requests">-</div>
+                    <div class="card-sub" id="val-requests-sub">No third-party requests</div>
+                </div>
+
+                <!-- Tokens Card -->
+                <div class="stat-card">
+                    <div class="card-header">
+                        <span class="card-title">Tokens & Cache</span>
+                        <div class="card-icon green-bg">🪙</div>
+                    </div>
+                    <div class="card-value" id="val-tokens">-</div>
+                    <div class="card-progress-container">
+                        <div class="progress-bar-label">
+                            <span>Cache Hit Rate</span>
+                            <span id="val-cache-percent">-</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill green-bar" id="bar-cache-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="card-sub text-center" id="val-tokens-split">- prompt / - comp</div>
+                </div>
+
+                <!-- Costs & Savings Card -->
+                <div class="stat-card highlighted">
+                    <div class="card-header">
+                        <span class="card-title">Cost & Realized Savings</span>
+                        <div class="card-icon terracotta-bg">💰</div>
+                    </div>
+                    <div class="card-value" id="val-energy-cost">-</div>
+                    <div class="savings-container">
+                        <div class="savings-amount" id="val-savings-amount">Saved -</div>
+                        <div class="savings-badge" id="val-savings-pct">-%</div>
+                    </div>
+                    <div class="card-sub" id="val-token-cost-comparison">Token rate comparison: -</div>
+                </div>
+
+                <!-- Energy Consumption Card -->
+                <div class="stat-card">
+                    <div class="card-header">
+                        <span class="card-title">Energy Consumption</span>
+                        <div class="card-icon orange-bg">🔌</div>
+                    </div>
+                    <div class="card-value" id="val-energy-kwh">- kWh</div>
+                    <div class="card-sub font-mono" id="val-energy-joules">- Joules</div>
+                    <div class="card-sub" id="val-energy-accounting">Accounting method: -</div>
+                </div>
+
+                <!-- Carbon Offset Card -->
+                <div class="stat-card">
+                    <div class="card-header">
+                        <span class="card-title">Carbon Footprint</span>
+                        <div class="card-icon emerald-bg">🌱</div>
+                    </div>
+                    <div class="card-value text-emerald" id="val-carbon-g">- g CO₂</div>
+                    <div class="card-sub" id="val-carbon-intensity">- g CO₂/kWh grid average</div>
+                    <div class="card-sub text-emerald" id="val-carbon-equivalent">-</div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="charts-grid">
+                <!-- Cost & Savings Progression -->
+                <div class="chart-card">
+                    <h3 id="chart-cost-title">Cost & Savings Progression</h3>
+                    <div class="chart-container">
+                        <canvas id="costSavingsChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Token & Cache Efficiency -->
+                <div class="chart-card">
+                    <h3>Token Cache Performance</h3>
+                    <div class="chart-container">
+                        <canvas id="cachePerformanceChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Cost Efficiency Chart -->
+                <div class="chart-card full-width-md">
+                    <h3 id="chart-efficiency-title">Cost per Million Tokens vs. Cost per Request</h3>
+                    <div class="chart-container">
+                        <canvas id="costEfficiencyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Details Section (Model and Tiers) -->
+            <div class="details-grid">
+                <!-- Model Breakdown Card -->
+                <div class="detail-card">
+                    <h3>Model Performance</h3>
+                    <div class="list-container" id="model-breakdown-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Granular Logs Section -->
+            <div class="logs-section">
+                <div class="logs-header">
+                    <h2 id="table-logs-title">Granular Logs</h2>
+                    <div class="logs-actions">
+                        <input type="text" id="log-search-input" placeholder="Search by date..." class="search-input">
+                        <button class="btn btn-secondary btn-sm" id="btn-export-csv-subset">
+                            Export Current View (CSV)
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="table-container">
+                    <table class="logs-table" id="logs-table">
+                        <thead>
+                            <tr>
+                                <th data-sort="date" class="sortable sorted-desc">Time <span class="sort-indicator">↓</span></th>
+                                <th data-sort="requests" class="sortable">Requests <span class="sort-indicator"></span></th>
+                                <th data-sort="tokens" class="sortable">Tokens <span class="sort-indicator"></span></th>
+                                <th data-sort="cached" class="sortable">Cached Tokens <span class="sort-indicator"></span></th>
+                                <th data-sort="cache_rate" class="sortable">Cache Hit Rate <span class="sort-indicator"></span></th>
+                                <th data-sort="energy_cost" class="sortable">Energy Cost <span class="sort-indicator"></span></th>
+                                <th data-sort="token_cost" class="sortable">Token Cost <span class="sort-indicator"></span></th>
+                                <th data-sort="savings" class="sortable">Savings <span class="sort-indicator"></span></th>
+                                <th data-sort="energy" class="sortable">Energy (Wh) <span class="sort-indicator"></span></th>
+                                <th data-sort="carbon" class="sortable">Carbon (g) <span class="sort-indicator"></span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-table-body">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+        </main>
+        
+        <footer class="app-footer">
+            <p><strong>Disclaimer:</strong> This is an unofficial, third-party companion tool. It is not affiliated with, sponsored by, or endorsed by Neuralwatt. All calculations, pricing simulations, and comparison models are for educational and comparative purposes only.</p>
+            <p>Built with Vanilla JS, CSS variables, and Chart.js.</p>
+        </footer>
+    </div>
+
+    <!-- JS Logic File -->
+    <script src="app.js"></script>
+</body>
+</html>

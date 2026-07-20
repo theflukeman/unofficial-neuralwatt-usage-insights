@@ -1,0 +1,44 @@
+# --- Secrets / environment ---
+# Local env files may contain live credentials (API keys, tokens, DB passwords).
+# NEVER commit these.
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# OS-level artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Windows alternate-data-stream metadata (e.g. downloaded-file Zone.Identifier)
+*:Zone.Identifier
+
+# ---Editors / IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+
+# --- Logs / runtime ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Dependencies / build artifacts (none today, but reserved for future use) ---
+node_modules/
+dist/
+build/
+.cache/
+*.tsbuildinfo
+
+# --- Coverage / test output ---
+coverage/
+.nyc_output/
+
+# --- Polytoken sandbox internals (not part of the project) ---
+.polytoken/
