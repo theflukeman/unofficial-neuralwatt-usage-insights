@@ -148,6 +148,18 @@ code, .font-mono {
     gap: 1rem;
 }
 
+.header-link {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
+    transition: color 0.2s ease;
+    line-height: 0;
+}
+
+.header-link:hover {
+    color: var(--accent-terracotta);
+}
+
 /* BUTTONS */
 .btn {
     display: inline-flex;
