@@ -1,5 +1,7 @@
 # Unofficial Neuralwatt Usage Insights
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 A client-side dashboard for analyzing Neuralwatt usage-analytics JSON exports.
 Drop in one or more single-model JSON exports from the Neuralwatt Usage Analytics
 Portal and the app aggregates them into summary cards, charts, and a sortable log
@@ -75,5 +77,10 @@ app.js       # All app logic (file parsing, aggregation, rendering, charts)
 
 ## License
 
-See repository for license terms. Trademarks and service marks belong to their
-respective owners.
+Released under the [MIT License](./LICENSE). See `LICENSE` for the full text.
+
+## Trademarks
+
+"Neuralwatt" and related marks are property of their respective owners. This
+project is unofficial and third-party; use of such marks is for identification
+purposes only and does not imply endorsement.
