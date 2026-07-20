@@ -317,6 +317,47 @@ code, .font-mono {
     line-height: 1.4;
 }
 
+/* IMPORT ERROR BANNER */
+.import-error-banner {
+    background: var(--bg-surface);
+    border: 1px solid var(--accent-terracotta);
+    border-left: 3px solid var(--accent-terracotta);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    animation: slideUp 0.3s ease-out;
+}
+
+.import-error-banner-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.4rem;
+    color: var(--accent-terracotta);
+    font-size: 0.85rem;
+}
+
+.import-error-close {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.import-error-list {
+    margin: 0;
+    padding-left: 1.2rem;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+.import-error-list li {
+    margin-bottom: 0.25rem;
+}
+
+.import-error-list li:last-child {
+    margin-bottom: 0;
+}
+
 /* DASHBOARD CONTROLS */
 .controls-panel {
     background-color: var(--bg-surface);

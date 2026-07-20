@@ -9,6 +9,32 @@ const dropZone = document.getElementById('drop-zone');
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
 const bodyEl = document.body;
 
+// Import error banner (non-blocking replacement for alert() on import)
+const importErrorBanner = document.getElementById('import-error-banner');
+const importErrorList = importErrorBanner.querySelector('.import-error-list');
+const importErrorCloseBtn = importErrorBanner.querySelector('.import-error-close');
+let importErrorTimer = null;
+
+function showImportErrors(messages) {
+    if (!messages || messages.length === 0) {
+        hideImportErrors();
+        return;
+    }
+    importErrorList.innerHTML = messages.map(m => `<li>${m}</li>`).join('');
+    importErrorBanner.style.display = 'block';
+    // Auto-dismiss after 12 seconds; any new error resets the timer.
+    if (importErrorTimer) clearTimeout(importErrorTimer);
+    importErrorTimer = setTimeout(hideImportErrors, 12000);
+}
+
+function hideImportErrors() {
+    importErrorBanner.style.display = 'none';
+    importErrorList.innerHTML = '';
+    if (importErrorTimer) { clearTimeout(importErrorTimer); importErrorTimer = null; }
+}
+
+importErrorCloseBtn.addEventListener('click', hideImportErrors);
+
 // Dynamic Controls
 const modelFilterSelect = document.getElementById('model-filter-select');
 const startDateFilterInput = document.getElementById('start-date-filter');
@@ -156,9 +182,9 @@ function populateOpenRouterOptions() {
         }
 
         // Convert to price per 1 Million tokens
-        const promptM = (promptPrice * 1000000).toFixed(2);
-        const cacheM = (promptCachedPrice * 1000000).toFixed(2);
-        const compM = (completionPrice * 1000000).toFixed(2);
+        const promptM = (promptPrice * TOKENS_PER_MILLION).toFixed(2);
+        const cacheM = (promptCachedPrice * TOKENS_PER_MILLION).toFixed(2);
+        const compM = (completionPrice * TOKENS_PER_MILLION).toFixed(2);
         
         const option = document.createElement('option');
         option.value = m.id;
@@ -256,11 +282,6 @@ document.getElementById('custom-tp-output').addEventListener('input', (e) => {
     }
 });
 
-modelFilterSelect.addEventListener('change', (e) => {
-    selectedModel = e.target.value;
-    updateCalculationsAndRender();
-});
-
 startDateFilterInput.addEventListener('change', (e) => {
     filterStartDate = e.target.value;
     updateCalculationsAndRender();
@@ -323,7 +344,9 @@ function handleFilesSelection(filesList) {
     
     Promise.all(promises).then(() => {
         if (errors.length > 0) {
-            alert(`Import Results:\n\n${errors.join('\n')}`);
+            showImportErrors(errors);
+        } else {
+            hideImportErrors();
         }
         if (loadedFiles.length > 0) {
             // Display dashboard
@@ -523,6 +546,11 @@ function renderImportedModelsList() {
             const index = parseInt(e.target.getAttribute('data-index'));
             loadedFiles.splice(index, 1);
             if (loadedFiles.length === 0) {
+                // Tear down Chart.js instances before hiding the dashboard,
+                // otherwise they leak as orphaned canvases on a hidden view.
+                if (costSavingsChart) { costSavingsChart.destroy(); costSavingsChart = null; }
+                if (cachePerformanceChart) { cachePerformanceChart.destroy(); cachePerformanceChart = null; }
+                if (costEfficiencyChart) { costEfficiencyChart.destroy(); costEfficiencyChart = null; }
                 rawData = null;
                 uploadContainer.style.display = 'block';
                 dashboardContainer.style.display = 'none';
@@ -542,13 +570,13 @@ function validateUsageData(data) {
            typeof data === 'object' && 
            data.totals !== undefined && 
            data.period !== undefined && 
-           (Array.isArray(data.daily) || Array.isArray(data.hourly) || Array.isArray(data.rows) || data.daily !== undefined);
+           (Array.isArray(data.daily) || Array.isArray(data.hourly) || Array.isArray(data.rows));
 }
 
 // POPULATE MODELS OPTIONS
 function populateModelOptions() {
     modelFilterSelect.innerHTML = '<option value="">All Models</option>';
-    const models = rawData.available_models || [];
+    const models = (rawData.available_models || []).slice().sort((a, b) => a.localeCompare(b));
     models.forEach(m => {
         const option = document.createElement('option');
         option.value = m;
@@ -590,25 +618,47 @@ function findOpenRouterMatch(modelName) {
 }
 
 // CALCULATIONS & COMPARATIVE PRICING ENGINE
+
+// Energy plan rates ($/kWh). MONTHS_PER_YEAR / BILLABLE_MONTHS expresses the
+// "annual = 2 months free" discount shared by the *-yr options.
+const ENERGY_PLAN_RATES = {
+    'flat-10':       10.00,
+    'plan-basic':     8.50,
+    'plan-std':       8.00,
+    'plan-pro':       7.50,
+};
+const BILLABLE_MONTHS = 10;
+const MONTHS_PER_YEAR  = 12;
+const ANNUAL_DISCOUNT  = BILLABLE_MONTHS / MONTHS_PER_YEAR; // 2 months free
+
+// Resolve the live $/kWh rate for the selected mode.
+// Returns null for 'json' mode (use the original cost from the export).
+function getEnergyKwhRate() {
+    if (costCalcMode === 'custom') return customKwhRate;
+    const base = ENERGY_PLAN_RATES[costCalcMode];
+    if (base !== undefined) {
+        return costCalcMode.endsWith('-yr') ? base * ANNUAL_DISCOUNT : base;
+    }
+    return null; // 'json' or unknown — defer to original cost
+}
+
+// Carbon equivalent of charging one smartphone (g CO₂). Source: EPA-style
+// approximation (~8.3 Wh per full smartphone charge × grid emissions factor).
+const SMARTPHONE_CHARGE_GCO2 = 8.3;
+
+// Per-million-tokens (Mtok) conversion factor. Prices are quoted per token on
+// the wire but displayed/input per million tokens.
+const TOKENS_PER_MILLION = 1000000;
+
+// Watt-hours per kilowatt-hour (used to render Wh in the logs/CSV).
+const WH_PER_KWH = 1000;
+
 function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionTokensTotal, energyKwh, originalCost, originalTokenCost, originalThirdPartyCost, modelName) {
     // 1. Calculate energy-based cost
     let energyCost = originalCost;
-    if (costCalcMode === 'flat-10') {
-        energyCost = energyKwh * 10.00;
-    } else if (costCalcMode === 'plan-basic') {
-        energyCost = energyKwh * 8.50;
-    } else if (costCalcMode === 'plan-std') {
-        energyCost = energyKwh * 8.00;
-    } else if (costCalcMode === 'plan-pro') {
-        energyCost = energyKwh * 7.50;
-    } else if (costCalcMode === 'plan-basic-yr') {
-        energyCost = energyKwh * (8.50 * 10 / 12);
-    } else if (costCalcMode === 'plan-std-yr') {
-        energyCost = energyKwh * (8.00 * 10 / 12);
-    } else if (costCalcMode === 'plan-pro-yr') {
-        energyCost = energyKwh * (7.50 * 10 / 12);
-    } else if (costCalcMode === 'custom') {
-        energyCost = energyKwh * customKwhRate;
+    const kwhRate = getEnergyKwhRate();
+    if (kwhRate !== null) {
+        energyCost = energyKwh * kwhRate;
     }
 
     // 2. Estimate prompt/completion split for individual slices (fallback if not provided in row)
@@ -635,9 +685,9 @@ function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionT
     }
 
     if (activeRateModelId === 'custom-rates') {
-        const promptPrice = customTpInputRate / 1000000;
-        const promptCachedPrice = customTpCacheRate / 1000000;
-        const completionPrice = customTpOutputRate / 1000000;
+        const promptPrice = customTpInputRate / TOKENS_PER_MILLION;
+        const promptCachedPrice = customTpCacheRate / TOKENS_PER_MILLION;
+        const completionPrice = customTpOutputRate / TOKENS_PER_MILLION;
         
         const promptCost = (uncachedPrompt * promptPrice) + (cachedTokens * promptCachedPrice);
         const completionCost = completionTokens * completionPrice;
@@ -675,6 +725,56 @@ function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionT
     };
 }
 
+// Build date-filtered per-model statistics from rawData.daily.
+// Shared by the central calculator and the model breakdown renderer so the
+// two cannot drift out of sync. Every daily row carries a `model` field
+// (stamped in compileMergedData), so the per-model map fully covers the
+// filtered set — base totals are derived by summing its values.
+function buildModelStats(startDate, endDate) {
+    const modelStats = {};
+    rawData.daily.forEach(d => {
+        const dDate = new Date(d.date);
+        if (startDate && dDate < startDate) return;
+        if (endDate && dDate > endDate) return;
+
+        const modelName = d.model;
+        if (!modelName) return;
+
+        if (!modelStats[modelName]) {
+            modelStats[modelName] = {
+                model: modelName,
+                requests: 0,
+                tokens: 0,
+                cached_tokens: 0,
+                cost: 0,
+                token_cost: 0,
+                energy_kwh: 0,
+                energy_joules: 0,
+                carbon_g: 0,
+                third_party_cost: 0,
+                third_party_requests: 0,
+                is_third_party: false
+            };
+            const origModel = rawData.by_model.find(x => x.model === modelName);
+            if (origModel) {
+                modelStats[modelName].is_third_party = origModel.is_third_party;
+            }
+        }
+        const s = modelStats[modelName];
+        s.requests      += d.requests || 0;
+        s.tokens        += d.tokens || 0;
+        s.cached_tokens += d.cached_tokens || 0;
+        s.cost          += d.cost || 0;
+        s.token_cost    += d.token_cost || 0;
+        s.energy_kwh    += d.energy_kwh || 0;
+        s.energy_joules += d.energy_joules || 0;
+        s.carbon_g      += d.carbon_g || 0;
+        s.third_party_cost      += d.third_party_cost || 0;
+        s.third_party_requests   += d.third_party_requests || 0;
+    });
+    return modelStats;
+}
+
 // CENTRAL REACTIVE CALCULATOR
 function updateCalculationsAndRender() {
     if (!rawData) return;
@@ -684,6 +784,8 @@ function updateCalculationsAndRender() {
     const endDate = filterEndDate ? new Date(filterEndDate + 'T23:59:59') : null;
 
     // 1. Establish base totals (isolated by model and date range if filtered)
+    const modelStats = buildModelStats(startDate, endDate);
+
     let baseRequests = 0;
     let baseTokens = 0;
     let baseCachedTokens = 0;
@@ -695,55 +797,18 @@ function updateCalculationsAndRender() {
     let baseThirdPartyCost = 0;
     let baseThirdPartyRequests = 0;
 
-    // Compute date-filtered statistics for each model dynamically
-    const modelStats = {};
-    rawData.daily.forEach(d => {
-        const dDate = new Date(d.date);
-        if (startDate && dDate < startDate) return;
-        if (endDate && dDate > endDate) return;
-
-        // Sum overall totals
-        if (!selectedModel || d.model === selectedModel) {
-            baseRequests += d.requests || 0;
-            baseTokens += d.tokens || 0;
-            baseCachedTokens += d.cached_tokens || 0;
-            baseEnergyKwh += d.energy_kwh || 0;
-            baseEnergyJoules += d.energy_joules || 0;
-            baseCarbonG += d.carbon_g || 0;
-            baseCost += d.cost || 0;
-            baseTokenCost += d.token_cost || 0;
-            baseThirdPartyCost += d.third_party_cost || 0;
-            baseThirdPartyRequests += d.third_party_requests || 0;
-        }
-
-        const modelName = d.model;
-        if (modelName) {
-            if (!modelStats[modelName]) {
-                modelStats[modelName] = {
-                    model: modelName,
-                    requests: 0,
-                    tokens: 0,
-                    cached_tokens: 0,
-                    cost: 0,
-                    token_cost: 0,
-                    energy_kwh: 0,
-                    energy_joules: 0,
-                    carbon_g: 0,
-                    third_party_cost: 0,
-                    third_party_requests: 0
-                };
-            }
-            modelStats[modelName].requests += d.requests || 0;
-            modelStats[modelName].tokens += d.tokens || 0;
-            modelStats[modelName].cached_tokens += d.cached_tokens || 0;
-            modelStats[modelName].cost += d.cost || 0;
-            modelStats[modelName].token_cost += d.token_cost || 0;
-            modelStats[modelName].energy_kwh += d.energy_kwh || 0;
-            modelStats[modelName].energy_joules += d.energy_joules || 0;
-            modelStats[modelName].carbon_g += d.carbon_g || 0;
-            modelStats[modelName].third_party_cost += d.third_party_cost || 0;
-            modelStats[modelName].third_party_requests += d.third_party_requests || 0;
-        }
+    Object.values(modelStats).forEach(m => {
+        if (selectedModel && m.model !== selectedModel) return;
+        baseRequests += m.requests;
+        baseTokens += m.tokens;
+        baseCachedTokens += m.cached_tokens;
+        baseEnergyKwh += m.energy_kwh;
+        baseEnergyJoules += m.energy_joules;
+        baseCarbonG += m.carbon_g;
+        baseCost += m.cost;
+        baseTokenCost += m.token_cost;
+        baseThirdPartyCost += m.third_party_cost;
+        baseThirdPartyRequests += m.third_party_requests;
     });
 
     const baseCarbonIntensity = baseEnergyKwh > 0 ? (baseCarbonG / baseEnergyKwh) : (rawData.totals.carbon_intensity || 0);
@@ -767,22 +832,9 @@ function updateCalculationsAndRender() {
 
     // Calculate dynamic cost comparisons
     let totalsEnergyCost = baseCost;
-    if (costCalcMode === 'flat-10') {
-        totalsEnergyCost = baseEnergyKwh * 10.00;
-    } else if (costCalcMode === 'plan-basic') {
-        totalsEnergyCost = baseEnergyKwh * 8.50;
-    } else if (costCalcMode === 'plan-std') {
-        totalsEnergyCost = baseEnergyKwh * 8.00;
-    } else if (costCalcMode === 'plan-pro') {
-        totalsEnergyCost = baseEnergyKwh * 7.50;
-    } else if (costCalcMode === 'plan-basic-yr') {
-        totalsEnergyCost = baseEnergyKwh * (8.50 * 10 / 12);
-    } else if (costCalcMode === 'plan-std-yr') {
-        totalsEnergyCost = baseEnergyKwh * (8.00 * 10 / 12);
-    } else if (costCalcMode === 'plan-pro-yr') {
-        totalsEnergyCost = baseEnergyKwh * (7.50 * 10 / 12);
-    } else if (costCalcMode === 'custom') {
-        totalsEnergyCost = baseEnergyKwh * customKwhRate;
+    const totalsKwhRate = getEnergyKwhRate();
+    if (totalsKwhRate !== null) {
+        totalsEnergyCost = baseEnergyKwh * totalsKwhRate;
     }
 
     let totalCompareCost = 0;
@@ -892,7 +944,7 @@ function updateCalculationsAndRender() {
             } else {
                 // If hourly records lack model field, scale timeline based on model's overall volume share
                 const modelObj = rawData.by_model.find(m => m.model === selectedModel);
-                if (modelObj) {
+                if (modelObj && rawData.totals.tokens > 0) {
                     const share = modelObj.tokens / rawData.totals.tokens;
                     item.requests = Math.round(item.requests * share);
                     item.tokens = Math.round(item.tokens * share);
@@ -962,7 +1014,7 @@ function formatCurrency(num) {
 }
 
 function formatDateShort(dateObj) {
-    return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return dateObj.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function formatDateTable(dateStr) {
@@ -974,6 +1026,18 @@ function formatDateTable(dateStr) {
         minute: '2-digit',
         hour12: false
     });
+}
+
+// RFC 4180 CSV field escaping: wrap in double quotes, escape embedded
+// quotes by doubling. Safe even for fields that never contain commas
+// today (numbers / ISO dates), so the export stays robust if a date
+// string or future field ever contains a comma or quote.
+function csvEscape(value) {
+    const str = String(value);
+    if (/[",\n\r]/.test(str)) {
+        return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
 }
 
 // SUMMARY STATS POPULATION
@@ -1029,7 +1093,7 @@ function renderSummaryStats() {
     valCarbonG.textContent = `${t.carbon_g.toFixed(2)} g CO₂`;
     valCarbonIntensity.textContent = `${t.carbon_intensity.toFixed(1)} g CO₂/kWh`;
     
-    const phoneCharges = (t.carbon_g / 8.3).toFixed(1);
+    const phoneCharges = (t.carbon_g / SMARTPHONE_CHARGE_GCO2).toFixed(1);
     valCarbonEquivalent.textContent = `≈ charging ${phoneCharges} smartphones`;
 }
 
@@ -1039,7 +1103,18 @@ function renderCharts() {
     const textPrimaryColor = isDark ? '#FDFCF7' : '#081A17';
     const textSecondaryColor = isDark ? '#9BAA95' : '#858458';
     const gridColor = isDark ? 'rgba(253, 252, 247, 0.08)' : 'rgba(8, 26, 23, 0.08)';
-    
+
+    // Chart dataset palette mirrors the CSS-variable accents in index.css
+    // (resolved here to concrete hexes because Chart.js cannot consume
+    // `var(--…)` directly). Keep these in sync with the :root / .dark-mode
+    // values for --accent-terracotta / --accent-green / --accent-emerald.
+    const chartColors = {
+        terracotta: isDark ? '#E86C45' : '#D55934', // --accent-terracotta
+        green:      isDark ? '#81c784' : '#2e7d32', // --accent-green
+        emerald:    isDark ? '#2dd4bf' : '#0f766e', // --accent-emerald
+        secondary:  textSecondaryColor,             // --text-secondary
+    };
+
     if (costSavingsChart) costSavingsChart.destroy();
     if (cachePerformanceChart) cachePerformanceChart.destroy();
     if (costEfficiencyChart) costEfficiencyChart.destroy();
@@ -1060,8 +1135,8 @@ function renderCharts() {
                 {
                     label: 'Calculated Cost (USD)',
                     data: energyCosts,
-                    backgroundColor: '#D55934',
-                    borderColor: '#D55934',
+                    backgroundColor: chartColors.terracotta,
+                    borderColor: chartColors.terracotta,
                     borderRadius: 4,
                     order: 2
                 },
@@ -1069,10 +1144,10 @@ function renderCharts() {
                     label: 'Compare Rate Cost (USD)',
                     data: tokenCosts,
                     type: 'line',
-                    borderColor: '#9BAA95',
+                    borderColor: chartColors.secondary,
                     borderWidth: 2,
                     borderDash: [5, 5],
-                    pointBackgroundColor: '#9BAA95',
+                    pointBackgroundColor: chartColors.secondary,
                     fill: false,
                     order: 1
                 },
@@ -1080,10 +1155,10 @@ function renderCharts() {
                     label: 'Realized Savings (USD)',
                     data: savings,
                     type: 'line',
-                    borderColor: '#2e7d32',
+                    borderColor: chartColors.green,
                     borderWidth: 2,
-                    pointBackgroundColor: '#2e7d32',
-                    backgroundColor: 'rgba(46, 125, 50, 0.05)',
+                    pointBackgroundColor: chartColors.green,
+                    backgroundColor: isDark ? 'rgba(129, 199, 132, 0.05)' : 'rgba(46, 125, 50, 0.05)',
                     fill: true,
                     order: 0
                 }
@@ -1135,14 +1210,14 @@ function renderCharts() {
                 {
                     label: 'Uncached Tokens',
                     data: calculatedTimelineSorted.map(d => d.tokens - (d.cached_tokens || 0)),
-                    backgroundColor: '#858458',
+                    backgroundColor: chartColors.secondary,
                     stack: 'Stack 0',
                     order: 2
                 },
                 {
                     label: 'Cached Tokens',
                     data: cachedTokens,
-                    backgroundColor: '#2e7d32',
+                    backgroundColor: chartColors.green,
                     stack: 'Stack 0',
                     order: 2
                 },
@@ -1150,9 +1225,9 @@ function renderCharts() {
                     label: 'Cache Hit %',
                     data: hitRates,
                     type: 'line',
-                    borderColor: '#2dd4bf',
+                    borderColor: chartColors.emerald,
                     borderWidth: 2,
-                    pointBackgroundColor: '#2dd4bf',
+                    pointBackgroundColor: chartColors.emerald,
                     yAxisID: 'y1',
                     fill: false,
                     order: 1
@@ -1207,7 +1282,7 @@ function renderCharts() {
     });
 
     // Chart 3: Cost per Million Tokens vs. Cost per Request
-    const costPerMillionData = calculatedTimelineSorted.map(d => d.tokens > 0 ? (d.cost / d.tokens) * 1000000 : 0);
+    const costPerMillionData = calculatedTimelineSorted.map(d => d.tokens > 0 ? (d.cost / d.tokens) * TOKENS_PER_MILLION : 0);
     const costPerRequestData = calculatedTimelineSorted.map(d => d.requests > 0 ? d.cost / d.requests : 0);
 
     const ctx3 = document.getElementById('costEfficiencyChart').getContext('2d');
@@ -1219,18 +1294,18 @@ function renderCharts() {
                 {
                     label: 'Cost per Million Tokens (USD)',
                     data: costPerMillionData,
-                    borderColor: '#D55934',
+                    borderColor: chartColors.terracotta,
                     borderWidth: 2,
-                    pointBackgroundColor: '#D55934',
+                    pointBackgroundColor: chartColors.terracotta,
                     yAxisID: 'y',
                     fill: false
                 },
                 {
                     label: 'Cost per Request (USD)',
                     data: costPerRequestData,
-                    borderColor: '#2dd4bf',
+                    borderColor: chartColors.emerald,
                     borderWidth: 2,
-                    pointBackgroundColor: '#2dd4bf',
+                    pointBackgroundColor: chartColors.emerald,
                     yAxisID: 'y1',
                     fill: false
                 }
@@ -1290,47 +1365,10 @@ function renderCharts() {
 function renderModelBreakdown() {
     modelBreakdownList.innerHTML = '';
     
-    // Compute date-filtered statistics for each model dynamically
-    const modelStats = {};
+    // Date-filtered per-model stats, shared with the central calculator.
     const startDate = filterStartDate ? new Date(filterStartDate + 'T00:00:00') : null;
     const endDate = filterEndDate ? new Date(filterEndDate + 'T23:59:59') : null;
-
-    rawData.daily.forEach(d => {
-        const dDate = new Date(d.date);
-        if (startDate && dDate < startDate) return;
-        if (endDate && dDate > endDate) return;
-
-        const modelName = d.model;
-        if (modelName) {
-            if (!modelStats[modelName]) {
-                modelStats[modelName] = {
-                    model: modelName,
-                    requests: 0,
-                    tokens: 0,
-                    cached_tokens: 0,
-                    cost: 0,
-                    token_cost: 0,
-                    energy_kwh: 0,
-                    energy_joules: 0,
-                    carbon_g: 0,
-                    is_third_party: false
-                };
-                
-                const origModel = rawData.by_model.find(x => x.model === modelName);
-                if (origModel) {
-                    modelStats[modelName].is_third_party = origModel.is_third_party;
-                }
-            }
-            modelStats[modelName].requests += d.requests || 0;
-            modelStats[modelName].tokens += d.tokens || 0;
-            modelStats[modelName].cached_tokens += d.cached_tokens || 0;
-            modelStats[modelName].cost += d.cost || 0;
-            modelStats[modelName].token_cost += d.token_cost || 0;
-            modelStats[modelName].energy_kwh += d.energy_kwh || 0;
-            modelStats[modelName].energy_joules += d.energy_joules || 0;
-            modelStats[modelName].carbon_g += d.carbon_g || 0;
-        }
-    });
+    const modelStats = buildModelStats(startDate, endDate);
 
     let models = Object.values(modelStats);
     if (selectedModel) {
@@ -1396,7 +1434,7 @@ function renderLogsTable() {
             energy_cost: d.cost,
             token_cost: d.token_cost,
             savings: d.savings,
-            energy: (d.energy_kwh || 0) * 1000, 
+            energy: (d.energy_kwh || 0) * WH_PER_KWH,
             carbon: d.carbon_g || 0,
             carbon_intensity: d.carbon_intensity || rawData.totals.carbon_intensity
         };
@@ -1494,7 +1532,7 @@ btnExportCsvSubset.addEventListener('click', () => {
             energy_cost: d.cost,
             token_cost: d.token_cost,
             savings: d.savings,
-            energy_wh: (d.energy_kwh || 0) * 1000,
+            energy_wh: (d.energy_kwh || 0) * WH_PER_KWH,
             carbon_g: d.carbon_g || 0
         };
     });
@@ -1517,7 +1555,7 @@ btnExportCsvSubset.addEventListener('click', () => {
 
     const headers = ['Time', 'Requests', 'Tokens', 'Cached Tokens', 'Cache Hit Rate %', 'Energy Cost (USD)', 'Standard Cost (USD)', 'Savings (USD)', 'Energy (Wh)', 'Carbon (g CO2)'];
     const csvContent = [
-        headers.join(','),
+        headers.map(csvEscape).join(','),
         ...rows.map(r => [
             r.date,
             r.requests,
@@ -1529,7 +1567,7 @@ btnExportCsvSubset.addEventListener('click', () => {
             r.savings.toFixed(6),
             r.energy_wh.toFixed(4),
             r.carbon_g.toFixed(4)
-        ].join(','))
+        ].map(csvEscape).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

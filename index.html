@@ -62,6 +62,15 @@
             </div>
         </header>
 
+        <!-- Import Error Banner (shown on both upload and dashboard states) -->
+        <div class="import-error-banner" id="import-error-banner" role="alert" aria-live="polite" style="display: none;">
+            <div class="import-error-banner-header">
+                <strong>Import Results</strong>
+                <button class="btn-remove-model import-error-close" aria-label="Dismiss" title="Dismiss">×</button>
+            </div>
+            <ul class="import-error-list"></ul>
+        </div>
+
         <!-- Blank State / Main Upload Container -->
         <section class="upload-section" id="upload-container">
             <div class="upload-card">
