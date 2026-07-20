@@ -893,7 +893,7 @@ function updateCalculationsAndRender() {
         savingsPct: totalSavingsPct
     };
 
-    // 2. Filter timeline by date range and group timeline by date if no model is selected
+    // 2. Filter timeline by date range
     let timelineSource = rawData.daily.filter(d => {
         const dDate = new Date(d.date);
         if (startDate && dDate < startDate) return false;
@@ -901,39 +901,10 @@ function updateCalculationsAndRender() {
         return true;
     });
 
-    if (!selectedModel) {
-        const grouped = {};
-        timelineSource.forEach(d => {
-            const dateStr = d.date;
-            if (!grouped[dateStr]) {
-                grouped[dateStr] = {
-                    date: dateStr,
-                    requests: 0,
-                    tokens: 0,
-                    cached_tokens: 0,
-                    cost: 0,
-                    token_cost: 0,
-                    energy_kwh: 0,
-                    energy_joules: 0,
-                    carbon_g: 0,
-                    self_hosted_cost: 0,
-                    third_party_cost: 0
-                };
-            }
-            grouped[dateStr].requests += d.requests || 0;
-            grouped[dateStr].tokens += d.tokens || 0;
-            grouped[dateStr].cached_tokens += d.cached_tokens || 0;
-            grouped[dateStr].cost += d.cost || 0;
-            grouped[dateStr].token_cost += d.token_cost || 0;
-            grouped[dateStr].energy_kwh += d.energy_kwh || 0;
-            grouped[dateStr].energy_joules += d.energy_joules || 0;
-            grouped[dateStr].carbon_g += d.carbon_g || 0;
-            grouped[dateStr].self_hosted_cost += d.self_hosted_cost || 0;
-            grouped[dateStr].third_party_cost += d.third_party_cost || 0;
-        });
-        timelineSource = Object.values(grouped);
-    }
-
+    // 3. Compute per-row costs BEFORE date-grouping so each row's compare
+    //    rate resolves the correct OpenRouter match for its model. Grouping
+    //    first would lose the `model` field and fall back to the first
+    //    model's rate for every aggregated row.
     calculatedTimeline = timelineSource.map(d => {
         let item = { ...d };
 
@@ -983,6 +954,44 @@ function updateCalculationsAndRender() {
 
         return item;
     }).filter(Boolean);
+
+    // 4. When all models are selected, group the now-costed rows by date so
+    //    the charts show a single series. Savings are summed from per-model
+    //    values already computed with each model's correct compare rate.
+    if (!selectedModel) {
+        const grouped = {};
+        calculatedTimeline.forEach(d => {
+            const dateStr = d.date;
+            if (!grouped[dateStr]) {
+                grouped[dateStr] = {
+                    date: dateStr,
+                    requests: 0,
+                    tokens: 0,
+                    cached_tokens: 0,
+                    cost: 0,
+                    token_cost: 0,
+                    energy_kwh: 0,
+                    energy_joules: 0,
+                    carbon_g: 0,
+                    savings: 0,
+                    self_hosted_cost: 0,
+                    third_party_cost: 0
+                };
+            }
+            grouped[dateStr].requests += d.requests || 0;
+            grouped[dateStr].tokens += d.tokens || 0;
+            grouped[dateStr].cached_tokens += d.cached_tokens || 0;
+            grouped[dateStr].cost += d.cost || 0;
+            grouped[dateStr].token_cost += d.token_cost || 0;
+            grouped[dateStr].energy_kwh += d.energy_kwh || 0;
+            grouped[dateStr].energy_joules += d.energy_joules || 0;
+            grouped[dateStr].carbon_g += d.carbon_g || 0;
+            grouped[dateStr].savings += d.savings || 0;
+            grouped[dateStr].self_hosted_cost += d.self_hosted_cost || 0;
+            grouped[dateStr].third_party_cost += d.third_party_cost || 0;
+        });
+        calculatedTimeline = Object.values(grouped);
+    }
 
     // Sort timeline ascending for charts
     calculatedTimelineSorted = [...calculatedTimeline].sort((a, b) => new Date(a.date) - new Date(b.date));
