@@ -739,7 +739,7 @@ function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionT
 function buildModelStats(startDate, endDate) {
     const modelStats = {};
     rawData.daily.forEach(d => {
-        const dDate = new Date(d.date);
+        const dDate = parseDateLocal(d.date);
         if (startDate && dDate < startDate) return;
         if (endDate && dDate > endDate) return;
 
@@ -910,7 +910,7 @@ function updateCalculationsAndRender() {
 
     // 2. Filter timeline by date range
     let timelineSource = rawData.daily.filter(d => {
-        const dDate = new Date(d.date);
+        const dDate = parseDateLocal(d.date);
         if (startDate && dDate < startDate) return false;
         if (endDate && dDate > endDate) return false;
         return true;
@@ -1009,7 +1009,7 @@ function updateCalculationsAndRender() {
     }
 
     // Sort timeline ascending for charts
-    calculatedTimelineSorted = [...calculatedTimeline].sort((a, b) => new Date(a.date) - new Date(b.date));
+    calculatedTimelineSorted = [...calculatedTimeline].sort((a, b) => parseDateLocal(a.date) - parseDateLocal(b.date));
 
     // 3. Render Everything with fresh data
     renderSummaryStats();
@@ -1041,12 +1041,36 @@ function formatDateShort(dateObj) {
     return dateObj.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// Parse a date or datetime string from Neuralwatt exports as LOCAL time.
+// Per the ECMAScript spec, date-only ISO strings ("2026-07-21") are read as
+// UTC midnight, which shifts the calendar day backward when the browser
+// renders in a western timezone (e.g. UTC-4 shows Jul 20). Appending
+// "T00:00:00" makes the spec treat it as local midnight, so the displayed
+// calendar date matches the export regardless of the viewer's timezone.
+// Datetime strings (e.g. hourly "2026-07-21T05:00:00") already parse as
+// local when they carry no timezone offset, and are returned unchanged.
+function parseDateLocal(dateStr) {
+    if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return new Date(dateStr + 'T00:00:00');
+    }
+    return new Date(dateStr);
+}
+
+// True when the exported row carries a whole-day (date-only) value rather
+// than a timestamp. Used to drop the meaningless "00:00" suffix on daily rows.
+function isDateOnly(dateStr) {
+    return typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
+}
+
 function formatDateTable(dateStr) {
-    const d = new Date(dateStr);
-    return d.toLocaleString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        hour: '2-digit', 
+    const d = parseDateLocal(dateStr);
+    if (isDateOnly(dateStr)) {
+        return d.toLocaleString('en-US', { month: 'short', day: 'numeric' });
+    }
+    return d.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
         minute: '2-digit',
         hour12: false
     });
@@ -1617,7 +1641,7 @@ function renderLogsTable() {
         const cacheRate = d.tokens > 0 ? ((d.cached_tokens || 0) / d.tokens * 100) : 0;
         return {
             dateStr: d.date,
-            dateObj: new Date(d.date),
+            dateObj: parseDateLocal(d.date),
             requests: d.requests,
             tokens: d.tokens,
             cached: d.cached_tokens || 0,
@@ -1763,8 +1787,8 @@ btnExportCsvSubset.addEventListener('click', () => {
         let valA = a[currentSortColumn];
         let valB = b[currentSortColumn];
         if (currentSortColumn === 'date') {
-            valA = new Date(a.date);
-            valB = new Date(b.date);
+            valA = parseDateLocal(a.date);
+            valB = parseDateLocal(b.date);
         }
         if (valA < valB) return currentSortDirection === 'asc' ? -1 : 1;
         if (valA > valB) return currentSortDirection === 'asc' ? 1 : -1;
