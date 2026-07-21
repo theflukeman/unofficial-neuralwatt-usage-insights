@@ -492,12 +492,23 @@ function compileMergedData() {
         rawData.totals.carbon_intensity = rawData.totals.carbon_g / rawData.totals.energy_kwh;
     }
     
-    const start = new Date(rawData.period.start);
-    const end = new Date(rawData.period.end);
-    periodBadge.textContent = `${formatDateShort(start)} - ${formatDateShort(end)}`;
+    // Derive the displayed range from the actual daily-row labels rather
+    // than from period.start/end. Those are UTC instants whose date
+    // portion can disagree with the calendar-day labels Neuralwatt
+    // assigns (e.g. period.end "2026-07-22T03:59:59" UTC maps to the
+    // Jul 21 EDT bucket, and during multi-file merge they get re-parsed
+    // and re-serialized via toISOString, shifting them by the local
+    // offset). The daily labels are the source of truth, so the badge,
+    // pickers, charts, and table all stay consistent in every timezone.
+    // YYYY-MM-DD sorts lexicographically == chronologically.
+    const dailyDates = rawData.daily.map(d => d.date).filter(Boolean).sort();
+    const fallbackStart = rawData.period.start ? rawData.period.start.split('T')[0] : '';
+    const fallbackEnd = rawData.period.end ? rawData.period.end.split('T')[0] : '';
+    const startStr = dailyDates.length ? dailyDates[0] : fallbackStart;
+    const endStr = dailyDates.length ? dailyDates[dailyDates.length - 1] : fallbackEnd;
 
-    const startStr = rawData.period.start.split('T')[0];
-    const endStr = rawData.period.end.split('T')[0];
+    periodBadge.textContent = `${formatDateTable(startStr)} - ${formatDateTable(endStr)}`;
+
     startDateFilterInput.min = startStr;
     startDateFilterInput.max = endStr;
     endDateFilterInput.min = startStr;
