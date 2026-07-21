@@ -385,6 +385,8 @@ code, .font-mono {
     flex-direction: column;
     flex: 1 1 250px;
     min-width: 250px;
+    align-self: stretch;
+    min-height: 0;
 }
 
 .control-group {
@@ -426,7 +428,7 @@ code, .font-mono {
 
 .methodology-note {
     width: 100%;
-    margin-top: 1rem;
+    margin-top: -0.5rem;
     padding: 0.75rem 1rem;
     background-color: rgba(253, 252, 247, 0.03);
     border-left: 3px solid var(--accent-terracotta);
@@ -444,7 +446,8 @@ code, .font-mono {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    max-height: 110px;
+    flex: 1 1 0;
+    min-height: 110px;
     overflow-y: auto;
     background: rgba(8, 26, 23, 0.03);
     border: 1px solid var(--border-color);
@@ -575,6 +578,15 @@ code, .font-mono {
     font-family: var(--font-heading);
     font-weight: 700;
     margin-bottom: 0.5rem;
+}
+
+.card-top {
+    display: flex;
+    flex-direction: column;
+}
+
+.card-bottom {
+    margin-top: auto;
 }
 
 .card-sub {
@@ -846,6 +858,62 @@ code, .font-mono {
 
 .logs-table tbody tr:hover {
     background-color: rgba(155, 170, 149, 0.02);
+}
+
+/* MODEL PERFORMANCE TABLE CUSTOM STYLES */
+.model-perf-name {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.model-perf-meta {
+    font-size: 0.725rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+.model-perf-badge {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 9999px;
+    font-weight: 600;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-top: 0.25rem;
+}
+
+.model-perf-details {
+    font-size: 0.785rem;
+    line-height: 1.4;
+}
+
+.model-perf-sub {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 0.15rem;
+}
+
+.savings-positive {
+    color: var(--accent-green) !important;
+    font-weight: 600;
+}
+
+.savings-neutral {
+    color: var(--text-secondary);
+}
+
+.comp-breakdown-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.725rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.comp-breakdown-list strong {
+    color: var(--text-primary);
 }
 
 /* FOOTER */

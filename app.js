@@ -63,13 +63,14 @@ const valCarbonIntensity = document.getElementById('val-carbon-intensity');
 const valCarbonEquivalent = document.getElementById('val-carbon-equivalent');
 
 // Details lists
-const modelBreakdownList = document.getElementById('model-breakdown-list');
+const modelPerformanceTbody = document.getElementById('model-performance-tbody');
 
 // Logs Elements
 const logSearchInput = document.getElementById('log-search-input');
 const btnExportCsvSubset = document.getElementById('btn-export-csv-subset');
 const logsTableBody = document.getElementById('logs-table-body');
-const logsTableHeaders = document.querySelectorAll('.logs-table th.sortable');
+const logsTableHeaders = document.querySelectorAll('#logs-table th.sortable');
+const modelTableHeaders = document.querySelectorAll('#model-performance-table th.sortable');
 
 // APP STATE
 let rawData = null;
@@ -77,6 +78,8 @@ let loadedFiles = []; // array of { fileName, modelName, data }
 let currentSortColumn = 'date';
 let currentSortDirection = 'desc'; // 'asc' or 'desc'
 let currentSearchQuery = '';
+let modelSortColumn = 'requests';
+let modelSortDirection = 'desc'; // 'asc' or 'desc'
 
 // Active Filter States
 let selectedModel = '';
@@ -511,7 +514,7 @@ function compileMergedData() {
     
     const granularity = rawData.granularity || 'daily';
     const label = granularity.charAt(0).toUpperCase() + granularity.slice(1);
-    document.getElementById('chart-cost-title').textContent = `Cost & Savings Progression (${label})`;
+    document.getElementById('chart-cost-title').textContent = `Cost & Est. Savings Progression (${label})`;
     document.getElementById('chart-efficiency-title').textContent = `Cost per Million Tokens vs. Cost per Request (${label})`;
     document.getElementById('table-logs-title').textContent = `${label} Granular Logs`;
     document.getElementById('log-search-input').placeholder = `Search by date...`;
@@ -659,6 +662,9 @@ function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionT
     const kwhRate = getEnergyKwhRate();
     if (kwhRate !== null) {
         energyCost = energyKwh * kwhRate;
+        if (modelName && modelName.toLowerCase().includes('flex')) {
+            energyCost *= 0.65;
+        }
     }
 
     // 2. Estimate prompt/completion split for individual slices (fallback if not provided in row)
@@ -831,10 +837,19 @@ function updateCalculationsAndRender() {
     });
 
     // Calculate dynamic cost comparisons
-    let totalsEnergyCost = baseCost;
+    let totalsEnergyCost = 0;
     const totalsKwhRate = getEnergyKwhRate();
     if (totalsKwhRate !== null) {
-        totalsEnergyCost = baseEnergyKwh * totalsKwhRate;
+        Object.values(modelStats).forEach(m => {
+            if (selectedModel && m.model !== selectedModel) return;
+            let mCost = m.energy_kwh * totalsKwhRate;
+            if (m.model && m.model.toLowerCase().includes('flex')) {
+                mCost *= 0.65;
+            }
+            totalsEnergyCost += mCost;
+        });
+    } else {
+        totalsEnergyCost = baseCost;
     }
 
     let totalCompareCost = 0;
@@ -1068,8 +1083,8 @@ function renderSummaryStats() {
 
     // Costs
     valEnergyCost.textContent = formatCurrency(t.cost);
-    valSavingsAmount.textContent = `Saved ${formatCurrency(t.savings)}`;
-    valSavingsPct.textContent = `${t.savingsPct.toFixed(1)}% Saved`;
+    valSavingsAmount.textContent = `Est. Saved ${formatCurrency(t.savings)}`;
+    valSavingsPct.textContent = `${t.savingsPct.toFixed(1)}% Est. Savings`;
     
     let rateLabel = "Compare rate";
     if (thirdPartyCompareRate === 'auto-match') {
@@ -1161,7 +1176,7 @@ function renderCharts() {
                     order: 1
                 },
                 {
-                    label: 'Realized Savings (USD)',
+                    label: 'Estimated Savings (USD)',
                     data: savings,
                     type: 'line',
                     borderColor: chartColors.green,
@@ -1372,26 +1387,22 @@ function renderCharts() {
 
 // MODEL BREAKDOWN RENDER
 function renderModelBreakdown() {
-    modelBreakdownList.innerHTML = '';
+    modelPerformanceTbody.innerHTML = '';
     
     // Date-filtered per-model stats, shared with the central calculator.
     const startDate = filterStartDate ? new Date(filterStartDate + 'T00:00:00') : null;
     const endDate = filterEndDate ? new Date(filterEndDate + 'T23:59:59') : null;
     const modelStats = buildModelStats(startDate, endDate);
 
-    let models = Object.values(modelStats);
-    if (selectedModel) {
-        models = models.filter(m => m.model === selectedModel);
-    }
-    if (models.length === 0) {
-        modelBreakdownList.innerHTML = '<div class="card-sub text-center py-2">No models listed</div>';
-        return;
-    }
+    // Map stats to pre-calculated properties for proper column sorting
+    let models = Object.values(modelStats).map(m => {
+        const origModel = rawData.by_model.find(x => x.model === m.model);
+        const ratio = origModel && origModel.tokens > 0 ? (origModel.completion_tokens / origModel.tokens) : 0;
+        const modelCompletion = m.tokens * ratio;
+        const modelPrompt = m.tokens - modelCompletion;
 
-    models.forEach(m => {
-        const cacheRate = m.tokens > 0 ? ((m.cached_tokens || 0) / m.tokens * 100) : 0;
+        const cacheRate = modelPrompt > 0 ? ((m.cached_tokens || 0) / modelPrompt * 100) : 0;
         
-        // Recalculate dynamically using custom rates
         const modelCosts = getCalculatedCosts(
             m.tokens,
             m.cached_tokens || 0,
@@ -1404,27 +1415,198 @@ function renderModelBreakdown() {
             m.model
         );
 
-        const card = document.createElement('div');
-        card.className = 'list-item';
-        card.innerHTML = `
-            <div class="list-item-header">
-                <span class="list-item-title">${m.model}</span>
-                <span class="list-item-badge ${m.is_third_party ? 'badge-warning' : 'badge-info'}">
-                    ${m.is_third_party ? 'third party' : 'energy optimization'}
-                </span>
-            </div>
-            <div class="list-item-details">
-                <div>Requests: <strong>${formatNumber(m.requests)}</strong></div>
-                <div>Tokens: <strong>${formatTokens(m.tokens)}</strong></div>
-                <div>Cache Rate: <strong>${cacheRate.toFixed(1)}%</strong></div>
-                <div>Energy Cost: <strong>${formatCurrency(modelCosts.energyCost)}</strong></div>
-                <div>Compare Cost: <strong>${formatCurrency(modelCosts.compareCost)}</strong></div>
-                <div>Savings: <strong>${formatCurrency(modelCosts.savings)} (${modelCosts.savingsPct.toFixed(1)}%)</strong></div>
-                <div>Carbon: <strong>${m.carbon_g.toFixed(1)}g CO₂</strong></div>
-                <div>Joules: <strong>${formatNumber(Math.round(m.energy_joules || 0))}J</strong></div>
-            </div>
+        return {
+            ...m,
+            modelPrompt,
+            modelCompletion,
+            cacheRate,
+            energyCost: modelCosts.energyCost,
+            compareCost: modelCosts.compareCost,
+            savings: modelCosts.savings,
+            savingsPct: modelCosts.savingsPct
+        };
+    });
+
+    if (selectedModel) {
+        models = models.filter(m => m.model === selectedModel);
+    }
+
+    // Sort models based on chosen column and direction
+    models.sort((a, b) => {
+        let valA, valB;
+        if (modelSortColumn === 'model') {
+            valA = a.model;
+            valB = b.model;
+            return modelSortDirection === 'asc' 
+                ? valA.localeCompare(valB) 
+                : valB.localeCompare(valA);
+        } else if (modelSortColumn === 'cache_rate') {
+            valA = a.cacheRate;
+            valB = b.cacheRate;
+        } else if (modelSortColumn === 'energy_cost') {
+            valA = a.energyCost;
+            valB = b.energyCost;
+        } else if (modelSortColumn === 'savings') {
+            valA = a.savings;
+            valB = b.savings;
+        } else {
+            valA = a[modelSortColumn];
+            valB = b[modelSortColumn];
+        }
+
+        return modelSortDirection === 'asc' 
+            ? (valA - valB) 
+            : (valB - valA);
+    });
+
+    if (models.length === 0) {
+        modelPerformanceTbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-secondary">No models listed</td></tr>';
+        return;
+    }
+
+    models.forEach(m => {
+        const modelCompletion = m.modelCompletion;
+        const modelPrompt = m.modelPrompt;
+        const cacheRate = m.cacheRate;
+
+        // Calculate unit costs
+        const costPerRequest = m.requests > 0 ? (m.energyCost / m.requests) : 0;
+        const compareCostPerRequest = m.requests > 0 ? (m.compareCost / m.requests) : 0;
+        const costPerMtok = m.tokens > 0 ? (m.energyCost / m.tokens * 1000000) : 0;
+        const compareCostPerMtok = m.tokens > 0 ? (m.compareCost / m.tokens * 1000000) : 0;
+
+        // Resolve Comparison rates & matched model
+        let activeRateModelId = thirdPartyCompareRate;
+        if (thirdPartyCompareRate === 'auto-match') {
+            const match = findOpenRouterMatch(m.model);
+            if (match) {
+                activeRateModelId = match.id;
+            } else {
+                activeRateModelId = 'json-token-cost';
+            }
+        }
+
+        let compLabel = '';
+        let compBreakdown = '';
+        const uncachedPrompt = Math.max(0, modelPrompt - (m.cached_tokens || 0));
+        const cachedTokens = m.cached_tokens || 0;
+        const completionTokens = modelCompletion;
+
+        if (activeRateModelId === 'custom-rates') {
+            compLabel = 'Custom Rates';
+            compBreakdown = `
+                <ul class="comp-breakdown-list">
+                    <li>Input: <strong>${formatCurrency(customTpInputRate)}/Mtok</strong></li>
+                    <li>Cached In: <strong>${formatCurrency(customTpCacheRate)}/Mtok</strong></li>
+                    <li>Output: <strong>${formatCurrency(customTpOutputRate)}/Mtok</strong></li>
+                </ul>
+            `;
+        } else if (activeRateModelId === 'json-token-cost') {
+            compLabel = 'JSON Token Cost';
+            compBreakdown = `
+                <ul class="comp-breakdown-list">
+                    <li>Aggregate: <strong>${formatCurrency(m.compareCost)}</strong></li>
+                </ul>
+            `;
+        } else {
+            const orModel = openRouterModels.find(x => x.id === activeRateModelId);
+            if (orModel) {
+                compLabel = `<a href="https://openrouter.ai/${orModel.id}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-terracotta); text-decoration: underline;">${orModel.name}</a>`;
+            } else {
+                compLabel = activeRateModelId;
+            }
+            if (orModel && orModel.pricing) {
+                const promptPrice = parseFloat(orModel.pricing.prompt) || 0;
+                const completionPrice = parseFloat(orModel.pricing.completion) || 0;
+                let promptCachedPrice = promptPrice;
+                if (orModel.pricing.input_cache_read !== undefined && orModel.pricing.input_cache_read !== null) {
+                    promptCachedPrice = parseFloat(orModel.pricing.input_cache_read) || 0;
+                }
+                const promptPriceM = promptPrice * TOKENS_PER_MILLION;
+                const promptCachedPriceM = promptCachedPrice * TOKENS_PER_MILLION;
+                const completionPriceM = completionPrice * TOKENS_PER_MILLION;
+                compBreakdown = `
+                    <ul class="comp-breakdown-list">
+                        <li>Input: <strong>${formatCurrency(promptPriceM)}/Mtok</strong></li>
+                        <li>Cached In: <strong>${formatCurrency(promptCachedPriceM)}/Mtok</strong></li>
+                        <li>Output: <strong>${formatCurrency(completionPriceM)}/Mtok</strong></li>
+                    </ul>
+                `;
+            } else {
+                compBreakdown = `
+                    <ul class="comp-breakdown-list">
+                        <li>Aggregate: <strong>${formatCurrency(m.compareCost)}</strong></li>
+                    </ul>
+                `;
+            }
+        }
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <div class="model-perf-name">${m.model}</div>
+                ${m.is_third_party ? `
+                <span class="model-perf-badge badge-warning">
+                    third party
+                </span>` : ''}
+            </td>
+            <td>
+                <div class="model-perf-details" style="font-weight:600;">
+                    ${formatNumber(m.requests)}
+                </div>
+            </td>
+            <td>
+                <div class="model-perf-details" style="font-weight:600;">
+                    ${formatTokens(m.tokens)}
+                </div>
+            </td>
+            <td>
+                <div class="model-perf-details" style="font-weight:600; font-size:0.9rem;">
+                    ${cacheRate.toFixed(1)}%
+                </div>
+            </td>
+            <td>
+                <div class="model-perf-details">
+                    Uncached In: <strong>${formatTokens(uncachedPrompt)}</strong><br>
+                    Cached In: <strong>${formatTokens(cachedTokens)}</strong><br>
+                    Out: <strong>${formatTokens(completionTokens)}</strong>
+                </div>
+            </td>
+            <td>
+                <div class="model-perf-details" style="font-weight:600; font-size:0.9rem;">
+                    ${formatCurrency(m.energyCost)}
+                </div>
+                <div class="model-perf-sub">
+                    ${m.energy_kwh.toFixed(3)} kWh
+                </div>
+            </td>
+            <td>
+                <div class="model-perf-details">
+                    Cost/Req:<br>
+                    • Energy: <strong>${formatCurrency(costPerRequest)}</strong><br>
+                    • Compare: <strong>${formatCurrency(compareCostPerRequest)}</strong><br>
+                    Cost/Mtok:<br>
+                    • Energy: <strong>${formatCurrency(costPerMtok)}</strong><br>
+                    • Compare: <strong>${formatCurrency(compareCostPerMtok)}</strong>
+                </div>
+            </td>
+            <td>
+                <div class="model-perf-details">
+                    OpenRouter Match:<br><strong>${compLabel}</strong><br>
+                    ${compBreakdown}
+                    Total Compare: <strong>${formatCurrency(m.compareCost)}</strong>
+                </div>
+            </td>
+            <td>
+                <div class="model-perf-details ${m.savings > 0 ? 'savings-positive' : 'savings-neutral'}">
+                    ${formatCurrency(m.savings)}
+                </div>
+                <div class="model-perf-sub ${m.savings > 0 ? 'savings-positive' : 'savings-neutral'}">
+                    (${m.savingsPct.toFixed(1)}%)
+                </div>
+            </td>
         `;
-        modelBreakdownList.appendChild(card);
+        modelPerformanceTbody.appendChild(row);
     });
 }
 
@@ -1526,6 +1708,33 @@ logsTableHeaders.forEach(th => {
     });
 });
 
+// MODEL PERFORMANCE TABLE COLUMN SORTING
+modelTableHeaders.forEach(th => {
+    th.addEventListener('click', () => {
+        const column = th.getAttribute('data-sort');
+        
+        modelTableHeaders.forEach(header => {
+            if (header !== th) {
+                header.classList.remove('sorted-asc', 'sorted-desc');
+                header.querySelector('.sort-indicator').textContent = '';
+            }
+        });
+
+        if (modelSortColumn === column) {
+            modelSortDirection = modelSortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            modelSortColumn = column;
+            modelSortDirection = 'desc';
+        }
+
+        th.classList.remove('sorted-asc', 'sorted-desc');
+        th.classList.add(modelSortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+        th.querySelector('.sort-indicator').textContent = modelSortDirection === 'asc' ? ' ↑' : ' ↓';
+
+        renderModelBreakdown();
+    });
+});
+
 // CSV SUBSET EXPORT
 btnExportCsvSubset.addEventListener('click', () => {
     if (!calculatedTimeline) return;
@@ -1562,7 +1771,7 @@ btnExportCsvSubset.addEventListener('click', () => {
         return 0;
     });
 
-    const headers = ['Time', 'Requests', 'Tokens', 'Cached Tokens', 'Cache Hit Rate %', 'Energy Cost (USD)', 'Standard Cost (USD)', 'Savings (USD)', 'Energy (Wh)', 'Carbon (g CO2)'];
+    const headers = ['Time', 'Requests', 'Tokens', 'Cached Tokens', 'Cache Hit Rate %', 'Energy Cost (USD)', 'Standard Cost (USD)', 'Est. Savings (USD)', 'Energy (Wh)', 'Carbon (g CO2)'];
     const csvContent = [
         headers.map(csvEscape).join(','),
         ...rows.map(r => [

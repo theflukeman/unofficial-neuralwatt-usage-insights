@@ -183,19 +183,19 @@
                             <input type="number" id="custom-tp-output" value="3.00" step="0.01" min="0" class="control-input" style="width: 100px;">
                         </div>
                     </div>
+                    
+                    <div class="methodology-note">
+                        <strong>Methodology Note:</strong> Daily exports only contain total and cached token counts; the detailed split (input vs. output) is only provided as an aggregate for the entire period. Day-level splits are estimated by applying the overall period's prompt/completion ratio to each day's total tokens.
+                    </div>
                 </div>
 
                 <div class="controls-right">
-                    <div class="control-group" style="width: 100%;">
+                    <div class="control-group" style="width: 100%; height: 100%; display: flex; flex-direction: column;">
                         <label>Imported Model Files</label>
                         <div id="imported-models-list" class="imported-models-list">
                             <!-- Populated by JS -->
                         </div>
                     </div>
-                </div>
-                
-                <div class="methodology-note">
-                    <strong>Methodology Note:</strong> Segment-level prompt and completion token splits are estimated by applying the cycle's aggregate token ratio to each segment's totals, then subtracting known cache volumes to calculate uncached inputs.
                 </div>
             </section>
             
@@ -203,67 +203,87 @@
             <div class="stats-grid">
                 <!-- Requests Card -->
                 <div class="stat-card">
-                    <div class="card-header">
-                        <span class="card-title">Total Requests</span>
-                        <div class="card-icon blue-bg">⚡</div>
+                    <div class="card-top">
+                        <div class="card-header">
+                            <span class="card-title">Total Requests</span>
+                            <div class="card-icon blue-bg">⚡</div>
+                        </div>
+                        <div class="card-value" id="val-requests">-</div>
                     </div>
-                    <div class="card-value" id="val-requests">-</div>
-                    <div class="card-sub" id="val-requests-sub">No third-party requests</div>
+                    <div class="card-bottom">
+                        <div class="card-sub" id="val-requests-sub">No third-party requests</div>
+                    </div>
                 </div>
 
                 <!-- Tokens Card -->
                 <div class="stat-card">
-                    <div class="card-header">
-                        <span class="card-title">Tokens & Cache</span>
-                        <div class="card-icon green-bg">🪙</div>
-                    </div>
-                    <div class="card-value" id="val-tokens">-</div>
-                    <div class="card-progress-container">
-                        <div class="progress-bar-label">
-                            <span>Cache Hit Rate</span>
-                            <span id="val-cache-percent">-</span>
+                    <div class="card-top">
+                        <div class="card-header">
+                            <span class="card-title">Tokens & Cache</span>
+                            <div class="card-icon green-bg">🪙</div>
                         </div>
-                        <div class="progress-bar-bg">
-                            <div class="progress-bar-fill green-bar" id="bar-cache-fill" style="width: 0%"></div>
-                        </div>
+                        <div class="card-value" id="val-tokens">-</div>
                     </div>
-                    <div class="card-sub text-center" id="val-tokens-split">- prompt / - comp</div>
+                    <div class="card-bottom">
+                        <div class="card-progress-container">
+                            <div class="progress-bar-label">
+                                <span>Cache Hit Rate</span>
+                                <span id="val-cache-percent">-</span>
+                            </div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill green-bar" id="bar-cache-fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="card-sub text-center" id="val-tokens-split">- prompt / - comp</div>
+                    </div>
                 </div>
 
                 <!-- Costs & Savings Card -->
                 <div class="stat-card highlighted">
-                    <div class="card-header">
-                        <span class="card-title">Cost & Realized Savings</span>
-                        <div class="card-icon terracotta-bg">💰</div>
+                    <div class="card-top">
+                        <div class="card-header">
+                            <span class="card-title">Cost & Estimated Savings</span>
+                            <div class="card-icon terracotta-bg">💰</div>
+                        </div>
+                        <div class="card-value" id="val-energy-cost">-</div>
                     </div>
-                    <div class="card-value" id="val-energy-cost">-</div>
-                    <div class="savings-container">
-                        <div class="savings-amount" id="val-savings-amount">Saved -</div>
-                        <div class="savings-badge" id="val-savings-pct">-%</div>
+                    <div class="card-bottom">
+                        <div class="savings-container">
+                            <div class="savings-amount" id="val-savings-amount">Saved -</div>
+                            <div class="savings-badge" id="val-savings-pct">-%</div>
+                        </div>
+                        <div class="card-sub" id="val-token-cost-comparison">Token rate comparison: -</div>
                     </div>
-                    <div class="card-sub" id="val-token-cost-comparison">Token rate comparison: -</div>
                 </div>
 
                 <!-- Energy Consumption Card -->
                 <div class="stat-card">
-                    <div class="card-header">
-                        <span class="card-title">Energy Consumption</span>
-                        <div class="card-icon orange-bg">🔌</div>
+                    <div class="card-top">
+                        <div class="card-header">
+                            <span class="card-title">Energy Consumption</span>
+                            <div class="card-icon orange-bg">🔌</div>
+                        </div>
+                        <div class="card-value" id="val-energy-kwh">- kWh</div>
                     </div>
-                    <div class="card-value" id="val-energy-kwh">- kWh</div>
-                    <div class="card-sub font-mono" id="val-energy-joules">- Joules</div>
-                    <div class="card-sub" id="val-energy-accounting">Accounting method: -</div>
+                    <div class="card-bottom">
+                        <div class="card-sub font-mono" id="val-energy-joules">- Joules</div>
+                        <div class="card-sub" id="val-energy-accounting">Accounting method: -</div>
+                    </div>
                 </div>
 
                 <!-- Carbon Offset Card -->
                 <div class="stat-card">
-                    <div class="card-header">
-                        <span class="card-title">Carbon Footprint</span>
-                        <div class="card-icon emerald-bg">🌱</div>
+                    <div class="card-top">
+                        <div class="card-header">
+                            <span class="card-title">Carbon Footprint</span>
+                            <div class="card-icon emerald-bg">🌱</div>
+                        </div>
+                        <div class="card-value text-emerald" id="val-carbon-g">- g CO₂</div>
                     </div>
-                    <div class="card-value text-emerald" id="val-carbon-g">- g CO₂</div>
-                    <div class="card-sub" id="val-carbon-intensity">- g CO₂/kWh grid average</div>
-                    <div class="card-sub text-emerald" id="val-carbon-equivalent">-</div>
+                    <div class="card-bottom">
+                        <div class="card-sub" id="val-carbon-intensity">- g CO₂/kWh grid average</div>
+                        <div class="card-sub text-emerald" id="val-carbon-equivalent">-</div>
+                    </div>
                 </div>
             </div>
 
@@ -271,7 +291,7 @@
             <div class="charts-grid">
                 <!-- Cost & Savings Progression -->
                 <div class="chart-card">
-                    <h3 id="chart-cost-title">Cost & Savings Progression</h3>
+                    <h3 id="chart-cost-title">Cost & Est. Savings Progression</h3>
                     <div class="chart-container">
                         <canvas id="costSavingsChart"></canvas>
                     </div>
@@ -298,9 +318,26 @@
             <div class="details-grid">
                 <!-- Model Breakdown Card -->
                 <div class="detail-card">
-                    <h3>Model Performance</h3>
-                    <div class="list-container" id="model-breakdown-list">
-                        <!-- Populated by JS -->
+                    <h3>Model Breakdown</h3>
+                    <div class="table-container">
+                        <table class="logs-table" id="model-performance-table">
+                            <thead>
+                                <tr>
+                                    <th data-sort="model" class="sortable">Model <span class="sort-indicator"></span></th>
+                                    <th data-sort="requests" class="sortable sorted-desc">Requests <span class="sort-indicator">↓</span></th>
+                                    <th data-sort="tokens" class="sortable">Tokens <span class="sort-indicator"></span></th>
+                                    <th data-sort="cache_rate" class="sortable">Cache Rate <span class="sort-indicator"></span></th>
+                                    <th>Token Breakdown</th>
+                                    <th data-sort="energy_cost" class="sortable">Energy Cost <span class="sort-indicator"></span></th>
+                                    <th>Unit Costs</th>
+                                    <th>Comparison Details</th>
+                                    <th data-sort="savings" class="sortable">Est. Savings <span class="sort-indicator"></span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="model-performance-tbody">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -328,7 +365,7 @@
                                 <th data-sort="cache_rate" class="sortable">Cache Hit Rate <span class="sort-indicator"></span></th>
                                 <th data-sort="energy_cost" class="sortable">Energy Cost <span class="sort-indicator"></span></th>
                                 <th data-sort="token_cost" class="sortable">Token Cost <span class="sort-indicator"></span></th>
-                                <th data-sort="savings" class="sortable">Savings <span class="sort-indicator"></span></th>
+                                <th data-sort="savings" class="sortable">Est. Savings <span class="sort-indicator"></span></th>
                                 <th data-sort="energy" class="sortable">Energy (Wh) <span class="sort-indicator"></span></th>
                                 <th data-sort="carbon" class="sortable">Carbon (g) <span class="sort-indicator"></span></th>
                             </tr>

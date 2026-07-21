@@ -42,3 +42,6 @@ coverage/
 
 # --- Polytoken sandbox internals (not part of the project) ---
 .polytoken/
+
+# --- Local usage sample data ---
+example_data/
