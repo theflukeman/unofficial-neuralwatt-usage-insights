@@ -198,6 +198,14 @@ code, .font-mono {
     border-color: var(--text-secondary);
 }
 
+/* The header is dark in both themes, so a btn-secondary there must use
+   light text regardless of the current theme's --text-primary. Scope to
+   .header-right so the export-CSV button on light surfaces is untouched. */
+.header-right .btn-secondary {
+    color: var(--text-on-dark);
+    border-color: rgba(253, 252, 247, 0.25);
+}
+
 .btn-sm {
     padding: 0.4rem 0.8rem;
     font-size: 0.75rem;
