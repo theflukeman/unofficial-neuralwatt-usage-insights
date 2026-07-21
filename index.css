@@ -128,7 +128,7 @@ code, .font-mono {
 .logo-sub {
     font-weight: 300;
     opacity: 0.8;
-    color: var(--text-secondary);
+    color: #FFFFFF;
 }
 
 .header-badge {
