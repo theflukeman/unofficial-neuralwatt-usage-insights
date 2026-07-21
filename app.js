@@ -731,7 +731,7 @@ function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionT
         }
     }
 
-    const savings = Math.max(0, compareCost - energyCost);
+    const savings = compareCost - energyCost;
     const savingsPct = compareCost > 0 ? (savings / compareCost * 100) : 0;
 
     return {
@@ -899,7 +899,7 @@ function updateCalculationsAndRender() {
         totalCompareCost = totalsCosts.compareCost;
     }
 
-    const totalSavings = Math.max(0, totalCompareCost - totalsEnergyCost);
+    const totalSavings = totalCompareCost - totalsEnergyCost;
     const totalSavingsPct = totalCompareCost > 0 ? (totalSavings / totalCompareCost * 100) : 0;
 
     calculatedTotals = {
@@ -1118,8 +1118,11 @@ function renderSummaryStats() {
 
     // Costs
     valEnergyCost.textContent = formatCurrency(t.cost);
-    valSavingsAmount.textContent = `Est. Saved ${formatCurrency(t.savings)}`;
-    valSavingsPct.textContent = `${t.savingsPct.toFixed(1)}% Est. Savings`;
+    const isNegativeSavings = t.savings < 0;
+    valSavingsAmount.textContent = `${isNegativeSavings ? 'Est. Over' : 'Est. Saved'} ${formatCurrency(Math.abs(t.savings))}`;
+    valSavingsPct.textContent = `${Math.abs(t.savingsPct).toFixed(1)}% Est. ${isNegativeSavings ? 'Over' : 'Savings'}`;
+    valSavingsAmount.classList.toggle('savings-negative', isNegativeSavings);
+    valSavingsPct.classList.toggle('savings-badge-negative', isNegativeSavings);
     
     let rateLabel = "Compare rate";
     if (thirdPartyCompareRate === 'auto-match') {
@@ -1702,7 +1705,7 @@ function renderLogsTable() {
             <td class="font-mono">${r.cache_rate.toFixed(1)}%</td>
             <td class="font-mono">${formatCurrency(r.energy_cost)}</td>
             <td class="font-mono">${formatCurrency(r.token_cost)}</td>
-            <td class="font-mono text-emerald" style="font-weight:600;">${formatCurrency(r.savings)}</td>
+            <td class="font-mono ${r.savings < 0 ? 'text-terracotta' : 'text-emerald'}" style="font-weight:600;">${formatCurrency(r.savings)}</td>
             <td>${r.energy.toFixed(1)} Wh</td>
             <td>${r.carbon.toFixed(1)} g</td>
         `;

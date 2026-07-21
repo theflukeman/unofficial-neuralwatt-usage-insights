@@ -599,6 +599,10 @@ code, .font-mono {
     color: var(--accent-emerald);
 }
 
+.text-terracotta {
+    color: var(--accent-terracotta);
+}
+
 /* Cache Progress Bar inside stat card */
 .card-progress-container {
     margin: 0.5rem 0;
@@ -650,6 +654,16 @@ code, .font-mono {
     padding: 0.15rem 0.5rem;
     border-radius: 9999px;
     font-weight: 700;
+}
+
+/* Negative-savings (energy costlier than the comparison provider) */
+.savings-negative {
+    color: var(--accent-terracotta);
+}
+
+.savings-badge-negative {
+    background-color: rgba(213, 89, 52, 0.15);
+    color: var(--accent-terracotta);
 }
 
 /* CHARTS GRID */
