@@ -566,7 +566,7 @@ function renderImportedModelsList() {
                 if (cachePerformanceChart) { cachePerformanceChart.destroy(); cachePerformanceChart = null; }
                 if (costEfficiencyChart) { costEfficiencyChart.destroy(); costEfficiencyChart = null; }
                 rawData = null;
-                uploadContainer.style.display = 'block';
+                uploadContainer.style.display = 'flex';
                 dashboardContainer.style.display = 'none';
                 miniUploadBtn.style.display = 'none';
                 periodBadge.style.display = 'none';
