@@ -48,6 +48,9 @@ const thirdPartyProviderSelect = document.getElementById('third-party-provider')
 const valRequests = document.getElementById('val-requests');
 const valRequestsSub = document.getElementById('val-requests-sub');
 const valTokens = document.getElementById('val-tokens');
+const valTokensPrompt = document.getElementById('val-tokens-prompt');
+const valTokensCached = document.getElementById('val-tokens-cached');
+const valTokensCompletion = document.getElementById('val-tokens-completion');
 const valCachePercent = document.getElementById('val-cache-percent');
 const barCacheFill = document.getElementById('bar-cache-fill');
 const valTokensSplit = document.getElementById('val-tokens-split');
@@ -1044,8 +1047,9 @@ function formatTokens(num) {
     return Math.round(num);
 }
 
-function formatCurrency(num) {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(num);
+function formatCurrency(num, decimals = 2) {
+    const maxDecimals = (decimals === 2 && Math.abs(num) > 0 && Math.abs(num) < 0.01) ? 4 : decimals;
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: maxDecimals }).format(num);
 }
 
 function formatDateShort(dateObj) {
@@ -1105,22 +1109,30 @@ function renderSummaryStats() {
     
     // Requests
     valRequests.textContent = formatNumber(t.requests);
-    valRequestsSub.textContent = t.third_party_requests > 0 
-        ? `${formatNumber(t.third_party_requests)} third-party requests` 
-        : '100% self-hosted requests';
+    if (valRequestsSub) {
+        valRequestsSub.textContent = t.third_party_requests > 0 
+            ? `${formatNumber(t.third_party_requests)} third-party requests` 
+            : '100% self-hosted requests';
+    }
 
     // Tokens
     valTokens.textContent = formatTokens(t.tokens);
+    if (valTokensPrompt) valTokensPrompt.textContent = formatTokens(t.prompt_tokens);
+    if (valTokensCached) valTokensCached.textContent = formatTokens(t.cached_tokens);
+    if (valTokensCompletion) valTokensCompletion.textContent = formatTokens(t.completion_tokens);
+    
     const cacheRate = t.prompt_tokens > 0 ? (t.cached_tokens / t.prompt_tokens * 100) : 0;
     valCachePercent.textContent = cacheRate.toFixed(1) + '%';
     barCacheFill.style.width = cacheRate.toFixed(1) + '%';
-    valTokensSplit.textContent = `${formatTokens(t.prompt_tokens)} prompt / ${formatTokens(t.completion_tokens)} completion (${formatTokens(t.cached_tokens)} cached)`;
+    if (valTokensSplit) {
+        valTokensSplit.textContent = `${formatTokens(t.prompt_tokens)} prompt / ${formatTokens(t.completion_tokens)} completion (${formatTokens(t.cached_tokens)} cached)`;
+    }
 
     // Costs
     valEnergyCost.textContent = formatCurrency(t.cost);
     const isNegativeSavings = t.savings < 0;
     valSavingsAmount.textContent = `${isNegativeSavings ? 'Est. Over' : 'Est. Saved'} ${formatCurrency(Math.abs(t.savings))}`;
-    valSavingsPct.textContent = `${Math.abs(t.savingsPct).toFixed(1)}% Est. ${isNegativeSavings ? 'Over' : 'Savings'}`;
+    valSavingsPct.textContent = `${Math.abs(t.savingsPct).toFixed(1)}%`;
     valSavingsAmount.classList.toggle('savings-negative', isNegativeSavings);
     valSavingsPct.classList.toggle('savings-badge-negative', isNegativeSavings);
     

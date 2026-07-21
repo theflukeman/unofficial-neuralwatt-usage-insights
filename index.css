@@ -572,6 +572,8 @@ code, .font-mono {
     align-items: center;
     justify-content: center;
     font-size: 1rem;
+    line-height: 1;
+    flex-shrink: 0;
 }
 
 /* Icon backgrounds */
@@ -603,12 +605,78 @@ code, .font-mono {
     margin-top: 0.25rem;
 }
 
+.card-dual-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.card-dual-metrics .metric-block {
+    display: flex;
+    flex-direction: column;
+}
+
+.card-dual-metrics .card-value {
+    font-size: 1.75rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 0.15rem;
+}
+
+.card-dual-metrics .metric-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.token-breakdown-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+
+.token-breakdown-stack .metric-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+}
+
+.token-breakdown-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.token-breakdown-value {
+    font-size: 1.4rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.15;
+    margin-bottom: 0;
+}
+
 .text-emerald {
     color: var(--accent-emerald);
 }
 
+.text-green {
+    color: var(--accent-green);
+}
+
 .text-terracotta {
     color: var(--accent-terracotta);
+}
+
+.font-semibold {
+    font-weight: 600;
 }
 
 /* Cache Progress Bar inside stat card */
@@ -658,10 +726,11 @@ code, .font-mono {
 .savings-badge {
     background-color: rgba(46, 125, 50, 0.15);
     color: var(--accent-green);
-    font-size: 0.7rem;
-    padding: 0.15rem 0.5rem;
+    font-size: 0.9rem;
+    padding: 0.25rem 0.65rem;
     border-radius: 9999px;
     font-weight: 700;
+    line-height: 1;
 }
 
 /* Negative-savings (energy costlier than the comparison provider) */

@@ -202,40 +202,58 @@
             
             <!-- Summary Stats Cards -->
             <div class="stats-grid">
-                <!-- Requests Card -->
+                <!-- Requests & Tokens Card -->
                 <div class="stat-card">
                     <div class="card-top">
                         <div class="card-header">
-                            <span class="card-title">Total Requests</span>
+                            <span class="card-title">Requests & Tokens</span>
                             <div class="card-icon blue-bg">⚡</div>
                         </div>
-                        <div class="card-value" id="val-requests">-</div>
-                    </div>
-                    <div class="card-bottom">
-                        <div class="card-sub" id="val-requests-sub">No third-party requests</div>
+                        <div class="card-dual-metrics">
+                            <div class="metric-block">
+                                <div class="card-value" id="val-requests">-</div>
+                                <span class="metric-label">Total Requests</span>
+                            </div>
+                            <div class="metric-block">
+                                <div class="card-value" id="val-tokens">-</div>
+                                <span class="metric-label">Total Tokens</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Tokens Card -->
+                <!-- Tokens & Cache Card -->
                 <div class="stat-card">
                     <div class="card-top">
                         <div class="card-header">
                             <span class="card-title">Tokens & Cache</span>
                             <div class="card-icon green-bg">🪙</div>
                         </div>
-                        <div class="card-value" id="val-tokens">-</div>
+                        <div class="token-breakdown-stack">
+                            <div class="metric-row">
+                                <span class="token-breakdown-value" id="val-tokens-prompt">-</span>
+                                <span class="token-breakdown-label">Input</span>
+                            </div>
+                            <div class="metric-row highlight-cache">
+                                <span class="token-breakdown-value text-green" id="val-tokens-cached">-</span>
+                                <span class="token-breakdown-label">Cached</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="token-breakdown-value" id="val-tokens-completion">-</span>
+                                <span class="token-breakdown-label">Output</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="card-bottom">
                         <div class="card-progress-container">
                             <div class="progress-bar-label">
                                 <span>Cache Hit Rate</span>
-                                <span id="val-cache-percent">-</span>
+                                <span id="val-cache-percent" class="font-mono font-semibold text-green">-</span>
                             </div>
                             <div class="progress-bar-bg">
                                 <div class="progress-bar-fill green-bar" id="bar-cache-fill" style="width: 0%"></div>
                             </div>
                         </div>
-                        <div class="card-sub text-center" id="val-tokens-split">- prompt / - comp</div>
                     </div>
                 </div>
 
