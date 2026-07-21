@@ -7,6 +7,8 @@ Drop in one or more single-model JSON exports from the Neuralwatt Usage Analytic
 Portal and the app aggregates them into summary cards, charts, and a sortable log
 table — with energy/cost/savings and carbon-footprint projections.
 
+🌐 **Live demo:** <https://theflukeman.github.io/unofficial-neuralwatt-usage-insights/>
+
 > ⚠️ **Unofficial.** This is a third-party companion tool. It is not affiliated with,
 > sponsored by, or endorsed by Neuralwatt. All calculations, pricing simulations, and
 > comparison models are for educational and comparative purposes only.
