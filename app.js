@@ -746,7 +746,8 @@ const ANNUAL_DISCOUNT  = BILLABLE_MONTHS / MONTHS_PER_YEAR; // 2 months free
 // Returns null for 'json' mode (use the original cost from the export).
 function getEnergyKwhRate() {
     if (costCalcMode === 'custom') return customKwhRate;
-    const base = ENERGY_PLAN_RATES[costCalcMode];
+    const baseKey = costCalcMode.replace(/-yr$/, '');
+    const base = ENERGY_PLAN_RATES[baseKey];
     if (base !== undefined) {
         return costCalcMode.endsWith('-yr') ? base * ANNUAL_DISCOUNT : base;
     }
