@@ -162,9 +162,11 @@
                     </div>
                     
                     <div class="control-group">
-                        <label for="third-party-provider">Third-Party Compare Rate</label>
+                        <label for="third-party-provider">Token Compare Rate</label>
                         <select id="third-party-provider" class="control-select">
                             <option value="auto-match" selected>Auto-Match (OpenRouter Live)</option>
+                            <option value="auto-match-neuralwatt">Auto-Match (Neuralwatt Posted Pricing)</option>
+                            <option value="auto-match-provider">Auto-Match (Official Provider Pricing)</option>
                             <option value="custom-rates">Custom Rates ($/Mtok)...</option>
                             <!-- Dynamic OpenRouter models appended here -->
                         </select>

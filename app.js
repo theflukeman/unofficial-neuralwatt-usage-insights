@@ -95,6 +95,42 @@ let customTpInputRate = 1.00; // $/Million tokens
 let customTpCacheRate = 0.50; // $/Million tokens
 let customTpOutputRate = 3.00; // $/Million tokens
 
+// Official Neuralwatt token pricing ($/Mtok) from portal.neuralwatt.com/pricing#all-models
+const NEURALWATT_MODEL_PRICING = {
+    'glm-5.2':            { prompt: 1.45, cache: 0.36, completion: 4.50 },
+    'glm-5.2-fast':       { prompt: 1.45, cache: 0.36, completion: 4.50 },
+    'glm-5.2-short':      { prompt: 1.45, cache: 0.36, completion: 4.50 },
+    'glm-5.2-short-fast': { prompt: 1.45, cache: 0.36, completion: 4.50 },
+    'glm-5.2-short-flex': { prompt: 1.45, cache: 0.36, completion: 4.50 },
+    'gemma-4-31b':        { prompt: 0.14, cache: 0.04, completion: 0.42 },
+    'kimi-k2.6':          { prompt: 0.69, cache: 0.17, completion: 3.22 },
+    'kimi-k2.6-fast':     { prompt: 0.69, cache: 0.17, completion: 3.22 },
+    'kimi-k2.7-code':      { prompt: 0.95, cache: 0.24, completion: 4.00 },
+    'kimi-k2.7-code-flex': { prompt: 0.95, cache: 0.24, completion: 4.00 },
+    'qwen3.5-397b':       { prompt: 0.69, cache: 0.17, completion: 4.14 },
+    'qwen3.5-397b-fast':  { prompt: 0.69, cache: 0.17, completion: 4.14 },
+    'qwen3.6-35b':        { prompt: 0.29, cache: 0.07, completion: 1.15 },
+    'qwen3.6-35b-fast':   { prompt: 0.29, cache: 0.07, completion: 1.15 }
+};
+
+// Official model provider token pricing ($/Mtok) from developer documentation (e.g. docs.z.ai)
+const PROVIDER_MODEL_PRICING = {
+    'glm-5.2':            { provider: 'Z.ai (ZhipuAI)', prompt: 1.40, cache: 0.26, completion: 4.40 },
+    'glm-5.2-fast':       { provider: 'Z.ai (ZhipuAI)', prompt: 1.40, cache: 0.26, completion: 4.40 },
+    'glm-5.2-short':      { provider: 'Z.ai (ZhipuAI)', prompt: 1.40, cache: 0.26, completion: 4.40 },
+    'glm-5.2-short-fast': { provider: 'Z.ai (ZhipuAI)', prompt: 1.40, cache: 0.26, completion: 4.40 },
+    'glm-5.2-short-flex': { provider: 'Z.ai (ZhipuAI)', prompt: 1.40, cache: 0.26, completion: 4.40 },
+    'gemma-4-31b':        { provider: 'Google / NVIDIA', prompt: 0.14, cache: 0.04, completion: 0.42 },
+    'kimi-k2.6':          { provider: 'Moonshot AI', prompt: 0.95, cache: 0.16, completion: 4.00 },
+    'kimi-k2.6-fast':     { provider: 'Moonshot AI', prompt: 0.95, cache: 0.16, completion: 4.00 },
+    'kimi-k2.7-code':      { provider: 'Moonshot AI', prompt: 0.95, cache: 0.16, completion: 4.00 },
+    'kimi-k2.7-code-flex': { provider: 'Moonshot AI', prompt: 0.95, cache: 0.16, completion: 4.00 },
+    'qwen3.5-397b':       { provider: 'Alibaba Cloud (Qwen)', prompt: 0.60, cache: 0.15, completion: 3.60 },
+    'qwen3.5-397b-fast':  { provider: 'Alibaba Cloud (Qwen)', prompt: 0.60, cache: 0.15, completion: 3.60 },
+    'qwen3.6-35b':        { provider: 'Alibaba Cloud (Qwen)', prompt: 0.29, cache: 0.07, completion: 1.15 },
+    'qwen3.6-35b-fast':   { provider: 'Alibaba Cloud (Qwen)', prompt: 0.29, cache: 0.07, completion: 1.15 }
+};
+
 // Dynamic OpenRouter models list
 let openRouterModels = [];
 
@@ -634,6 +670,64 @@ function findOpenRouterMatch(modelName) {
     return null;
 }
 
+// DYNAMICALLY FETCH LIVE NEURALWATT POSTED PRICING (WITH BUILT-IN FALLBACK)
+async function fetchNeuralwattPricing() {
+    try {
+        const response = await fetch('https://api.neuralwatt.com/v1/models');
+        if (!response.ok) throw new Error('API response was not OK');
+        const data = await response.json();
+        if (data && Array.isArray(data.data)) {
+            data.data.forEach(item => {
+                if (item.id && item.metadata && item.metadata.pricing) {
+                    const p = item.metadata.pricing;
+                    const prompt = parseFloat(p.input_per_million) || 0;
+                    const completion = parseFloat(p.output_per_million) || 0;
+                    let cache = prompt * 0.25;
+                    if (p.cached_input_per_million !== undefined && p.cached_input_per_million !== null) {
+                        cache = parseFloat(p.cached_input_per_million) || 0;
+                    }
+                    NEURALWATT_MODEL_PRICING[item.id.toLowerCase()] = {
+                        prompt,
+                        cache,
+                        completion
+                    };
+                }
+            });
+            if (rawData) {
+                updateCalculationsAndRender();
+            }
+        }
+    } catch (err) {
+        console.log('Neuralwatt live API pricing fetch skipped/offline, using built-in posted registry:', err);
+    }
+}
+
+// FUZZY MATCH MODEL TO NEURALWATT POSTED PRICING REGISTRY
+function findNeuralwattPricing(modelName) {
+    if (!modelName) return null;
+    const clean = modelName.toLowerCase().trim();
+    if (NEURALWATT_MODEL_PRICING[clean]) return NEURALWATT_MODEL_PRICING[clean];
+    for (const key in NEURALWATT_MODEL_PRICING) {
+        if (clean === key || clean.startsWith(key) || key.startsWith(clean)) {
+            return NEURALWATT_MODEL_PRICING[key];
+        }
+    }
+    return null;
+}
+
+// FUZZY MATCH MODEL TO OFFICIAL MODEL PROVIDER PRICING REGISTRY
+function findProviderPricing(modelName) {
+    if (!modelName) return null;
+    const clean = modelName.toLowerCase().trim();
+    if (PROVIDER_MODEL_PRICING[clean]) return PROVIDER_MODEL_PRICING[clean];
+    for (const key in PROVIDER_MODEL_PRICING) {
+        if (clean === key || clean.startsWith(key) || key.startsWith(clean)) {
+            return PROVIDER_MODEL_PRICING[key];
+        }
+    }
+    return null;
+}
+
 // CALCULATIONS & COMPARATIVE PRICING ENGINE
 
 // Energy plan rates ($/kWh). MONTHS_PER_YEAR / BILLABLE_MONTHS expresses the
@@ -691,17 +785,21 @@ function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionT
     }
     const uncachedPrompt = Math.max(0, promptTokens - cachedTokens);
 
-    // 3. Compute Third-party Comparison Cost
+    // 3. Compute Token Comparison Cost
     let compareCost = originalTokenCost;
     let activeRateModelId = thirdPartyCompareRate;
 
-    if (thirdPartyCompareRate === 'auto-match') {
+    if (thirdPartyCompareRate === 'auto-match' || thirdPartyCompareRate === 'auto-match-openrouter') {
         const match = findOpenRouterMatch(modelName);
         if (match) {
             activeRateModelId = match.id;
         } else {
             activeRateModelId = 'json-token-cost';
         }
+    } else if (thirdPartyCompareRate === 'auto-match-neuralwatt') {
+        activeRateModelId = 'neuralwatt-pricing';
+    } else if (thirdPartyCompareRate === 'auto-match-provider') {
+        activeRateModelId = 'provider-pricing';
     }
 
     if (activeRateModelId === 'custom-rates') {
@@ -712,6 +810,32 @@ function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionT
         const promptCost = (uncachedPrompt * promptPrice) + (cachedTokens * promptCachedPrice);
         const completionCost = completionTokens * completionPrice;
         compareCost = promptCost + completionCost;
+    } else if (activeRateModelId === 'neuralwatt-pricing') {
+        const nwPricing = findNeuralwattPricing(modelName);
+        if (nwPricing) {
+            const promptPrice = nwPricing.prompt / TOKENS_PER_MILLION;
+            const promptCachedPrice = nwPricing.cache / TOKENS_PER_MILLION;
+            const completionPrice = nwPricing.completion / TOKENS_PER_MILLION;
+            
+            const promptCost = (uncachedPrompt * promptPrice) + (cachedTokens * promptCachedPrice);
+            const completionCost = completionTokens * completionPrice;
+            compareCost = promptCost + completionCost;
+        } else {
+            compareCost = originalTokenCost;
+        }
+    } else if (activeRateModelId === 'provider-pricing') {
+        const provPricing = findProviderPricing(modelName);
+        if (provPricing) {
+            const promptPrice = provPricing.prompt / TOKENS_PER_MILLION;
+            const promptCachedPrice = provPricing.cache / TOKENS_PER_MILLION;
+            const completionPrice = provPricing.completion / TOKENS_PER_MILLION;
+            
+            const promptCost = (uncachedPrompt * promptPrice) + (cachedTokens * promptCachedPrice);
+            const completionCost = completionTokens * completionPrice;
+            compareCost = promptCost + completionCost;
+        } else {
+            compareCost = originalTokenCost;
+        }
     } else if (activeRateModelId === 'json-token-cost') {
         // No heuristics: return standard token cost directly from the JSON
         compareCost = originalTokenCost;
@@ -867,7 +991,7 @@ function updateCalculationsAndRender() {
     }
 
     let totalCompareCost = 0;
-    if (thirdPartyCompareRate === 'auto-match' && !selectedModel) {
+    if (thirdPartyCompareRate.startsWith('auto-match') && !selectedModel) {
         const models = Object.values(modelStats);
         if (models.length > 0) {
             models.forEach(m => {
@@ -1136,8 +1260,8 @@ function renderSummaryStats() {
     valSavingsAmount.classList.toggle('savings-negative', isNegativeSavings);
     valSavingsPct.classList.toggle('savings-badge-negative', isNegativeSavings);
     
-    let rateLabel = "Compare rate";
-    if (thirdPartyCompareRate === 'auto-match') {
+    let rateLabel = "Token compare rate";
+    if (thirdPartyCompareRate === 'auto-match' || thirdPartyCompareRate === 'auto-match-openrouter') {
         if (selectedModel) {
             const match = findOpenRouterMatch(selectedModel);
             rateLabel = match ? `OpenRouter Auto-Match (${match.name})` : "JSON standard rate";
@@ -1147,6 +1271,10 @@ function renderSummaryStats() {
         } else {
             rateLabel = "OpenRouter Auto-Match (Multi-Model)";
         }
+    } else if (thirdPartyCompareRate === 'auto-match-neuralwatt') {
+        rateLabel = "Neuralwatt Official Pricing";
+    } else if (thirdPartyCompareRate === 'auto-match-provider') {
+        rateLabel = "Official Provider Pricing";
     } else if (thirdPartyCompareRate === 'custom-rates') {
         rateLabel = "Custom rates ($/Mtok)";
     } else {
@@ -1527,13 +1655,17 @@ function renderModelBreakdown() {
 
         // Resolve Comparison rates & matched model
         let activeRateModelId = thirdPartyCompareRate;
-        if (thirdPartyCompareRate === 'auto-match') {
+        if (thirdPartyCompareRate === 'auto-match' || thirdPartyCompareRate === 'auto-match-openrouter') {
             const match = findOpenRouterMatch(m.model);
             if (match) {
                 activeRateModelId = match.id;
             } else {
                 activeRateModelId = 'json-token-cost';
             }
+        } else if (thirdPartyCompareRate === 'auto-match-neuralwatt') {
+            activeRateModelId = 'neuralwatt-pricing';
+        } else if (thirdPartyCompareRate === 'auto-match-provider') {
+            activeRateModelId = 'provider-pricing';
         }
 
         let compLabel = '';
@@ -1551,6 +1683,42 @@ function renderModelBreakdown() {
                     <li>Output: <strong>${formatCurrency(customTpOutputRate)}/Mtok</strong></li>
                 </ul>
             `;
+        } else if (activeRateModelId === 'neuralwatt-pricing') {
+            const nwP = findNeuralwattPricing(m.model);
+            compLabel = 'Neuralwatt Official';
+            if (nwP) {
+                compBreakdown = `
+                    <ul class="comp-breakdown-list">
+                        <li>Input: <strong>${formatCurrency(nwP.prompt)}/Mtok</strong></li>
+                        <li>Cached In: <strong>${formatCurrency(nwP.cache)}/Mtok</strong></li>
+                        <li>Output: <strong>${formatCurrency(nwP.completion)}/Mtok</strong></li>
+                    </ul>
+                `;
+            } else {
+                compBreakdown = `
+                    <ul class="comp-breakdown-list">
+                        <li>Aggregate: <strong>${formatCurrency(m.compareCost)}</strong></li>
+                    </ul>
+                `;
+            }
+        } else if (activeRateModelId === 'provider-pricing') {
+            const prP = findProviderPricing(m.model);
+            compLabel = prP && prP.provider ? prP.provider : 'Official Provider';
+            if (prP) {
+                compBreakdown = `
+                    <ul class="comp-breakdown-list">
+                        <li>Input: <strong>${formatCurrency(prP.prompt)}/Mtok</strong></li>
+                        <li>Cached In: <strong>${formatCurrency(prP.cache)}/Mtok</strong></li>
+                        <li>Output: <strong>${formatCurrency(prP.completion)}/Mtok</strong></li>
+                    </ul>
+                `;
+            } else {
+                compBreakdown = `
+                    <ul class="comp-breakdown-list">
+                        <li>Aggregate: <strong>${formatCurrency(m.compareCost)}</strong></li>
+                    </ul>
+                `;
+            }
         } else if (activeRateModelId === 'json-token-cost') {
             compLabel = 'JSON Token Cost';
             compBreakdown = `
@@ -1848,5 +2016,6 @@ btnExportCsvSubset.addEventListener('click', () => {
     document.body.removeChild(link);
 });
 
-// START BACKGROUND LOAD FOR OPENROUTER
+// START BACKGROUND LOAD FOR OPENROUTER & NEURALWATT POSTED RATES
 fetchOpenRouterModels();
+fetchNeuralwattPricing();
