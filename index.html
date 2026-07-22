@@ -85,13 +85,58 @@
                 
                 <div class="directions-list">
                     <h4>How to Get Your Data:</h4>
-                    <ol>
-                        <li>Go to your <a href="https://portal.neuralwatt.com/dashboard/usage" target="_blank" rel="noopener">Neuralwatt Usage Analytics Portal</a>.</li>
-                        <li>Select your desired date range and a <strong>single model</strong>.</li>
-                        <li>Export the file as a <strong>JSON</strong> export.</li>
-                        <li>Repeat for as many models as you want.</li>
-                        <li>Drop those files below for multi-model aggregation and analysis!</li>
-                    </ol>
+                    <p class="directions-subtext">Choose your preferred export method below:</p>
+                    
+                    <div class="export-methods-grid">
+                        <div class="export-method-card bookmarklet-card">
+                            <div class="method-badge">Recommended</div>
+                            <h5>⚡ 1-Click Batch Export Bookmarklet</h5>
+                            <p class="method-desc">Automatically export JSON data for all model IDs in your timezone with one click.</p>
+                            
+                            <div class="bm-generator-controls">
+                                <div class="bm-control-group">
+                                    <label for="bm-time-unit">Time Unit</label>
+                                    <select id="bm-time-unit" class="bm-select">
+                                        <option value="days" selected>Days</option>
+                                        <option value="hours">Hours</option>
+                                    </select>
+                                </div>
+                                <div class="bm-control-group">
+                                    <label for="bm-time-val" id="bm-time-val-label">Duration (Days)</label>
+                                    <input type="number" id="bm-time-val" class="bm-input" min="1" max="365" value="30">
+                                </div>
+                                <div class="bm-control-group">
+                                    <label for="bm-timezone">Timezone</label>
+                                    <input type="text" id="bm-timezone" class="bm-input" placeholder="America/New_York">
+                                </div>
+                            </div>
+                            
+                            <div class="bm-actions">
+                                <a id="bookmarklet-link" href="#" class="btn btn-primary btn-sm bm-drag-btn" title="Drag to Bookmarks Bar">
+                                    ⚡ Batch Export Neuralwatt Data (30d)
+                                </a>
+                                <button id="copy-bookmarklet-btn" class="btn btn-secondary btn-sm" type="button" aria-label="Copy Bookmarklet Code">
+                                    <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 012-2v-8a2 2 0 01-2-2h-8a2 2 0 01-2 2v8a2 2 0 012 2z" />
+                                    </svg>
+                                    <span id="copy-bookmarklet-text">Copy Code</span>
+                                </button>
+                            </div>
+                            <div class="bm-tip">
+                                📌 <strong>2-Click Process:</strong> Drag to Bookmarks Bar. <strong>Click 1:</strong> Opens/reloads <a href="https://portal.neuralwatt.com/dashboard/usage" target="_blank" rel="noopener">Neuralwatt Usage Page</a> with your selected options. <strong>Click 2:</strong> Click bookmarklet again on that loaded page to batch-download all model JSON exports!
+                            </div>
+                        </div>
+
+                        <div class="export-method-card manual-card">
+                            <h5>📄 Manual Export</h5>
+                            <ol>
+                                <li>Go to <a href="https://portal.neuralwatt.com/dashboard/usage" target="_blank" rel="noopener">Neuralwatt Usage Analytics Portal</a>.</li>
+                                <li>Select date/hour range and a single model.</li>
+                                <li>Click <strong>Export as JSON</strong>.</li>
+                                <li>Repeat per model as needed.</li>
+                            </ol>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="drop-zone" id="drop-zone">

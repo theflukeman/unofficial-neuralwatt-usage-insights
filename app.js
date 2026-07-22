@@ -169,6 +169,195 @@ function initTheme() {
 }
 initTheme();
 
+// BOOKMARKLET GENERATOR LOGIC
+function buildBookmarkletScript(timeUnit, timeVal, timezone) {
+    const unit = timeUnit === 'hours' ? 'hours' : 'days';
+    let val = parseInt(timeVal, 10) || (unit === 'hours' ? 72 : 30);
+    if (unit === 'hours' && val > 72) val = 72;
+    const tz = (timezone || 'America/New_York').trim();
+
+    const script = `(async function(){
+        const unit="${unit}";
+        const val="${val}";
+        const tz="${tz}";
+        const targetUrl="https://portal.neuralwatt.com/dashboard/usage?"+unit+"="+encodeURIComponent(val)+"&tz="+encodeURIComponent(tz);
+        const href=window.location.href;
+        const hasParams=href.includes(unit+"="+val) && href.includes("tz=");
+        const isOnUsage=href.includes("portal.neuralwatt.com/dashboard/usage");
+
+        if(!isOnUsage){
+            alert("⚡ Step 1 of 2: Opening Neuralwatt Usage Page in a new tab...\\n\\nOnce loaded, click this bookmarklet one more time to start downloading!");
+            window.open(targetUrl,"_blank");
+            return;
+        }
+
+        if(!hasParams){
+            alert("⚡ Step 1 of 2: Reloading Neuralwatt Usage Page with your selected parameters ("+val+" "+unit+", "+tz+")...\\n\\nClick this bookmarklet one more time once reloaded to download!");
+            window.location.href=targetUrl;
+            return;
+        }
+
+        let banner=document.getElementById("nw-exporter-banner");
+        if(!banner){
+            banner=document.createElement("div");
+            banner.id="nw-exporter-banner";
+            banner.style.cssText="position:fixed;top:20px;right:20px;z-index:999999;background:#1a1d24;color:#fff;border:2px solid #d55934;padding:16px 20px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.5);font-family:sans-serif;font-size:14px;max-width:380px;line-height:1.4;";
+            document.body.appendChild(banner);
+        }
+        const update=(msg,err=false)=>{
+            banner.innerHTML=\`<div style="display:flex;align-items:center;gap:8px;font-weight:bold;color:\${err?'#ff6b6b':'#d55934'};margin-bottom:6px;">⚡ Neuralwatt Batch Exporter</div><div>\${msg}</div>\`;
+        };
+
+        update("Step 2/2: Reading active model options from loaded page...");
+        await new Promise(r=>setTimeout(r,600));
+
+        let models=[];
+        const sel=document.querySelector('select[x-model="selectedModel"]') || document.querySelector('select');
+        if(sel){
+            Array.from(sel.options).forEach(opt=>{
+                const v=(opt.value||"").trim();
+                if(v && v!=="all" && v!=="All Models"){
+                    models.push(v);
+                }
+            });
+        }
+
+        if(!models.length){
+            document.querySelectorAll("select option").forEach(opt=>{
+                const v=(opt.value||"").trim();
+                if(v && v!=="all" && v!=="All Models"){
+                    models.push(v);
+                }
+            });
+        }
+
+        if(!models.length){
+            models=["glm-5.2","glm-5.2-short","glm-5.2-short-fast","glm-5.2-short-flex","kimi-k2.7-code","kimi-k2.7-code-flex","qwen3.5-397b","qwen3.6-35b","gemma-4-31b"];
+        }
+
+        models=Array.from(new Set(models));
+
+        update(\`Step 2/2: Found \${models.length} active model(s). Exporting...\`);
+        let done=0;
+        for(let i=0;i<models.length;i++){
+            const m=models[i];
+            update(\`Exporting (\${i+1}/\${models.length}): <strong>\${m}</strong>...\`);
+            const url=\`https://portal.neuralwatt.com/dashboard/api/usage/export?\${unit}=\${encodeURIComponent(val)}&tz=\${encodeURIComponent(tz)}&format=json&model=\${encodeURIComponent(m)}\`;
+            try{
+                const r=await fetch(url,{credentials:"include"});
+                if(r.ok){
+                    const blob=await r.blob();
+                    const a=document.createElement("a");
+                    a.href=URL.createObjectURL(blob);
+                    a.download=\`neuralwatt-export-\${m}-\${val}\${unit.charAt(0)}.json\`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(a.href);
+                    done++;
+                }
+            }catch(err){console.error(\`Failed \${m}\`,err);}
+            await new Promise(res=>setTimeout(res,400));
+        }
+        update(\`✅ Done! Exported \${done}/\${models.length} Neuralwatt JSON file(s). Drop them into Neuralwatt Insights!\`);
+        setTimeout(()=>{if(banner)banner.remove();},8000);
+    })();`;
+
+    return 'javascript:' + encodeURIComponent(script.replace(/\s+/g, ' ').trim());
+}
+
+function detectUserTimezone() {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
+    } catch (e) {
+        return 'America/New_York';
+    }
+}
+
+function initBookmarkletGenerator() {
+    const timeUnitSelect = document.getElementById('bm-time-unit');
+    const timeValInput = document.getElementById('bm-time-val');
+    const timeValLabel = document.getElementById('bm-time-val-label');
+    const timezoneInput = document.getElementById('bm-timezone');
+    const bookmarkletLink = document.getElementById('bookmarklet-link');
+    const copyBtn = document.getElementById('copy-bookmarklet-btn');
+    const copyText = document.getElementById('copy-bookmarklet-text');
+
+    if (!timeUnitSelect || !bookmarkletLink) return;
+
+    if (timezoneInput && !timezoneInput.value) {
+        timezoneInput.value = detectUserTimezone();
+    }
+
+    function updateBookmarklet() {
+        const unit = timeUnitSelect.value;
+        let val = parseInt(timeValInput.value, 10);
+        if (isNaN(val) || val < 1) val = unit === 'hours' ? 72 : 30;
+
+        if (unit === 'hours') {
+            if (val > 72) {
+                val = 72;
+                if (timeValInput) timeValInput.value = '72';
+            }
+            if (timeValInput) timeValInput.setAttribute('max', '72');
+            if (timeValLabel) timeValLabel.textContent = 'Duration (Hours)';
+        } else {
+            if (timeValInput) timeValInput.setAttribute('max', '365');
+            if (timeValLabel) timeValLabel.textContent = 'Duration (Days)';
+        }
+
+        const tz = timezoneInput ? (timezoneInput.value || 'America/New_York') : 'America/New_York';
+        const spanSuffix = unit === 'hours' ? `${val}h` : `${val}d`;
+        bookmarkletLink.textContent = `⚡ Batch Export Neuralwatt Data (${spanSuffix})`;
+
+        const code = buildBookmarkletScript(unit, val, tz);
+        bookmarkletLink.setAttribute('href', code);
+    }
+
+    timeUnitSelect.addEventListener('change', () => {
+        if (timeUnitSelect.value === 'hours' && timeValInput.value === '30') {
+            timeValInput.value = '72';
+        } else if (timeUnitSelect.value === 'days' && timeValInput.value === '72') {
+            timeValInput.value = '30';
+        }
+        updateBookmarklet();
+    });
+
+    if (timeValInput) timeValInput.addEventListener('input', updateBookmarklet);
+    if (timezoneInput) timezoneInput.addEventListener('input', updateBookmarklet);
+
+    if (copyBtn && copyText) {
+        copyBtn.addEventListener('click', () => {
+            const code = bookmarkletLink.getAttribute('href');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(code).then(() => {
+                    copyText.textContent = 'Copied!';
+                    setTimeout(() => {
+                        copyText.textContent = 'Copy Code';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy bookmarklet', err);
+                });
+            } else {
+                const textArea = document.createElement('textarea');
+                textArea.value = code;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                copyText.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyText.textContent = 'Copy Code';
+                }, 2000);
+            }
+        });
+    }
+
+    updateBookmarklet();
+}
+
+initBookmarkletGenerator();
+
 // FETCH LIVE OPENROUTER MODELS & PRICING
 async function fetchOpenRouterModels() {
     try {

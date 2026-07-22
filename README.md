@@ -34,10 +34,21 @@ table — with energy/cost/savings and carbon-footprint projections.
 
 ## Getting your data
 
+### Method 1: 1-Click Batch Export Bookmarklet (Recommended)
+
+1. Open Neuralwatt Insights and use the **1-Click Batch Export Bookmarklet Generator**.
+2. Configure your desired **Time Unit** (Days `days=30` or Hours `hours=72`) and **Timezone**.
+3. Drag the **⚡ Batch Export Neuralwatt Data** button to your browser's Bookmarks Bar (or click **Copy Code**).
+4. **Click 1:** Click the bookmarklet on any page (or on Neuralwatt) to open/reload the [Neuralwatt Usage Page](https://portal.neuralwatt.com/dashboard/usage) with your chosen parameters (`days`, `hours`, `tz`).
+5. **Click 2:** Once the page loads, click the bookmarklet a second time to automatically download JSON exports for all active models!
+6. Drag and drop all downloaded JSON files directly into Neuralwatt Insights!
+
+### Method 2: Manual Export
+
 1. Open the [Neuralwatt Usage Analytics Portal](https://portal.neuralwatt.com/dashboard/usage).
-2. Pick a date range and a **single model**.
+2. Pick a date/hour range and a **single model**.
 3. **Export as JSON**.
-4. Repeat per model.
+4. Repeat per model as needed.
 5. Drop those files into the app for multi-model aggregation.
 
 Only `.json` exports are supported.
