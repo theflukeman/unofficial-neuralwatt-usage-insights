@@ -1174,7 +1174,7 @@ function formatTokens(num) {
 
 function formatCurrency(num, decimals = 2) {
     const maxDecimals = (decimals === 2 && Math.abs(num) > 0 && Math.abs(num) < 0.01) ? 4 : decimals;
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: maxDecimals }).format(num);
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: decimals, maximumFractionDigits: maxDecimals }).format(num);
 }
 
 function formatDateShort(dateObj) {
@@ -1344,7 +1344,7 @@ function renderCharts() {
                     order: 2
                 },
                 {
-                    label: 'Compare Rate Cost (USD)',
+                    label: 'Token Comp. Cost (USD)',
                     data: tokenCosts,
                     type: 'line',
                     borderColor: chartColors.secondary,
@@ -1669,65 +1669,44 @@ function renderModelBreakdown() {
             activeRateModelId = 'provider-pricing';
         }
 
+        let compHeading = 'OpenRouter Match:';
         let compLabel = '';
         let compBreakdown = '';
         const uncachedPrompt = Math.max(0, modelPrompt - (m.cached_tokens || 0));
         const cachedTokens = m.cached_tokens || 0;
         const completionTokens = modelCompletion;
 
+        function formatRatesBreakdown(inRate, cacheRate, outRate) {
+            const inFormatted = formatCurrency(inRate);
+            const cacheFormatted = formatCurrency(cacheRate).replace('$', '');
+            const outFormatted = formatCurrency(outRate).replace('$', '');
+            return `In/Cache/Out <strong>${inFormatted}/${cacheFormatted}/${outFormatted}</strong><br>`;
+        }
+
         if (activeRateModelId === 'custom-rates') {
+            compHeading = 'Custom Rates:';
             compLabel = 'Custom Rates';
-            compBreakdown = `
-                <ul class="comp-breakdown-list">
-                    <li>Input: <strong>${formatCurrency(customTpInputRate)}/Mtok</strong></li>
-                    <li>Cached In: <strong>${formatCurrency(customTpCacheRate)}/Mtok</strong></li>
-                    <li>Output: <strong>${formatCurrency(customTpOutputRate)}/Mtok</strong></li>
-                </ul>
-            `;
+            compBreakdown = formatRatesBreakdown(customTpInputRate, customTpCacheRate, customTpOutputRate);
         } else if (activeRateModelId === 'neuralwatt-pricing') {
+            compHeading = 'Neuralwatt Match:';
             const nwP = findNeuralwattPricing(m.model);
             compLabel = 'Neuralwatt Official';
-            if (nwP) {
-                compBreakdown = `
-                    <ul class="comp-breakdown-list">
-                        <li>Input: <strong>${formatCurrency(nwP.prompt)}/Mtok</strong></li>
-                        <li>Cached In: <strong>${formatCurrency(nwP.cache)}/Mtok</strong></li>
-                        <li>Output: <strong>${formatCurrency(nwP.completion)}/Mtok</strong></li>
-                    </ul>
-                `;
-            } else {
-                compBreakdown = `
-                    <ul class="comp-breakdown-list">
-                        <li>Aggregate: <strong>${formatCurrency(m.compareCost)}</strong></li>
-                    </ul>
-                `;
-            }
+            compBreakdown = nwP ? formatRatesBreakdown(nwP.prompt, nwP.cache, nwP.completion) : '';
         } else if (activeRateModelId === 'provider-pricing') {
+            compHeading = 'Official Provider Match:';
             const prP = findProviderPricing(m.model);
             compLabel = prP && prP.provider ? prP.provider : 'Official Provider';
-            if (prP) {
-                compBreakdown = `
-                    <ul class="comp-breakdown-list">
-                        <li>Input: <strong>${formatCurrency(prP.prompt)}/Mtok</strong></li>
-                        <li>Cached In: <strong>${formatCurrency(prP.cache)}/Mtok</strong></li>
-                        <li>Output: <strong>${formatCurrency(prP.completion)}/Mtok</strong></li>
-                    </ul>
-                `;
-            } else {
-                compBreakdown = `
-                    <ul class="comp-breakdown-list">
-                        <li>Aggregate: <strong>${formatCurrency(m.compareCost)}</strong></li>
-                    </ul>
-                `;
-            }
+            compBreakdown = prP ? formatRatesBreakdown(prP.prompt, prP.cache, prP.completion) : '';
         } else if (activeRateModelId === 'json-token-cost') {
+            compHeading = 'JSON Token Rate:';
             compLabel = 'JSON Token Cost';
-            compBreakdown = `
-                <ul class="comp-breakdown-list">
-                    <li>Aggregate: <strong>${formatCurrency(m.compareCost)}</strong></li>
-                </ul>
-            `;
+            compBreakdown = '';
         } else {
+            if (thirdPartyCompareRate === 'auto-match' || thirdPartyCompareRate === 'auto-match-openrouter') {
+                compHeading = 'OpenRouter Match:';
+            } else {
+                compHeading = 'Selected Model:';
+            }
             const orModel = openRouterModels.find(x => x.id === activeRateModelId);
             if (orModel) {
                 compLabel = `<a href="https://openrouter.ai/${orModel.id}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-terracotta); text-decoration: underline;">${orModel.name}</a>`;
@@ -1744,19 +1723,9 @@ function renderModelBreakdown() {
                 const promptPriceM = promptPrice * TOKENS_PER_MILLION;
                 const promptCachedPriceM = promptCachedPrice * TOKENS_PER_MILLION;
                 const completionPriceM = completionPrice * TOKENS_PER_MILLION;
-                compBreakdown = `
-                    <ul class="comp-breakdown-list">
-                        <li>Input: <strong>${formatCurrency(promptPriceM)}/Mtok</strong></li>
-                        <li>Cached In: <strong>${formatCurrency(promptCachedPriceM)}/Mtok</strong></li>
-                        <li>Output: <strong>${formatCurrency(completionPriceM)}/Mtok</strong></li>
-                    </ul>
-                `;
+                compBreakdown = formatRatesBreakdown(promptPriceM, promptCachedPriceM, completionPriceM);
             } else {
-                compBreakdown = `
-                    <ul class="comp-breakdown-list">
-                        <li>Aggregate: <strong>${formatCurrency(m.compareCost)}</strong></li>
-                    </ul>
-                `;
+                compBreakdown = '';
             }
         }
 
@@ -1802,18 +1771,18 @@ function renderModelBreakdown() {
             <td>
                 <div class="model-perf-details">
                     Cost/Req:<br>
-                    • Energy: <strong>${formatCurrency(costPerRequest)}</strong><br>
-                    • Compare: <strong>${formatCurrency(compareCostPerRequest)}</strong><br>
+                    • <strong>${formatCurrency(costPerRequest, 4)}</strong> Energy<br>
+                    • <strong>${formatCurrency(compareCostPerRequest, 4)}</strong> Token Comp.<br>
                     Cost/Mtok:<br>
-                    • Energy: <strong>${formatCurrency(costPerMtok)}</strong><br>
-                    • Compare: <strong>${formatCurrency(compareCostPerMtok)}</strong>
+                    • <strong>${formatCurrency(costPerMtok, 4)}</strong> Energy<br>
+                    • <strong>${formatCurrency(compareCostPerMtok, 4)}</strong> Token Comp.
                 </div>
             </td>
             <td>
                 <div class="model-perf-details">
-                    OpenRouter Match:<br><strong>${compLabel}</strong><br>
+                    ${compHeading}<br><strong>${compLabel}</strong><br>
                     ${compBreakdown}
-                    Total Compare: <strong>${formatCurrency(m.compareCost)}</strong>
+                    Total Token Comp.: <strong>${formatCurrency(m.compareCost)}</strong>
                 </div>
             </td>
             <td>
