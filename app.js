@@ -1,5 +1,4 @@
 // DOM ELEMENTS
-const uploadContainer = document.getElementById('upload-container');
 const dashboardContainer = document.getElementById('dashboard-container');
 const periodBadge = document.getElementById('period-badge');
 const miniUploadBtn = document.getElementById('mini-upload-btn');
@@ -68,6 +67,18 @@ const valCarbonEquivalent = document.getElementById('val-carbon-equivalent');
 // Details lists
 const modelPerformanceTbody = document.getElementById('model-performance-tbody');
 
+// Energy Insights Elements
+const valEnergyWeightedAvg = document.getElementById('val-energy-weighted-avg');
+const valEnergyWeightedSub = document.getElementById('val-energy-weighted-sub');
+const valUserReqSize = document.getElementById('val-user-req-size');
+const valUserReqBand = document.getElementById('val-user-req-band');
+const valUserMwhReq = document.getElementById('val-user-mwh-req');
+const valUserMwhVsBenchmark = document.getElementById('val-user-mwh-vs-benchmark');
+const valMostEfficientModel = document.getElementById('val-most-efficient-model');
+const valMostEfficientMwh = document.getElementById('val-most-efficient-mwh');
+const energyBenchmarkTbody = document.getElementById('energy-benchmark-tbody');
+const energyBenchmarkTableHeaders = document.querySelectorAll('#energy-benchmark-table th.sortable');
+
 // Logs Elements
 const logSearchInput = document.getElementById('log-search-input');
 const btnExportCsvSubset = document.getElementById('btn-export-csv-subset');
@@ -83,6 +94,11 @@ let currentSortDirection = 'desc'; // 'asc' or 'desc'
 let currentSearchQuery = '';
 let modelSortColumn = 'requests';
 let modelSortDirection = 'desc'; // 'asc' or 'desc'
+
+// Energy Insights State
+let energyTableSortColumn = 'model';
+let energyTableSortDirection = 'asc';
+let energyInsightsChart = null;
 
 // Active Filter States
 let selectedModel = '';
@@ -131,6 +147,13 @@ const PROVIDER_MODEL_PRICING = {
     'qwen3.6-35b-fast':   { provider: 'Alibaba Cloud (Qwen)', prompt: 0.29, cache: 0.07, completion: 1.15 }
 };
 
+// Live Neuralwatt portal energy consumption telemetry (mWh / req & % of reqs by prompt size band)
+// Pulled live from portal.neuralwatt.com/energy-pricing ("Average energy per request, by model and request size")
+let NEURALWATT_ENERGY_BENCHMARKS = [];
+let liveEnergyPricingLoaded = false;
+let liveEnergyPricingFetching = false;
+let liveEnergyPricingError = null;
+
 // Dynamic OpenRouter models list
 let openRouterModels = [];
 
@@ -155,6 +178,7 @@ themeToggleBtn.addEventListener('click', () => {
     }
     if (rawData) {
         renderCharts();
+        renderEnergyInsights();
     }
 });
 
@@ -446,12 +470,14 @@ dropZone.addEventListener('drop', (e) => {
 mainFileInput.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
         handleFilesSelection(e.target.files);
+        mainFileInput.value = '';
     }
 });
 
 miniFileInput.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
         handleFilesSelection(e.target.files);
+        miniFileInput.value = '';
     }
 });
 
@@ -523,7 +549,53 @@ endDateFilterInput.addEventListener('change', (e) => {
     updateCalculationsAndRender();
 });
 
-// MULTI-FILE UPLOADER HANDLER (ENFORCES SINGLE-MODEL FILES)
+// ENERGY INSIGHTS CONTROLS LISTENERS
+
+const btnRefreshEnergy = document.getElementById('btn-refresh-energy');
+if (btnRefreshEnergy) {
+    btnRefreshEnergy.addEventListener('click', () => {
+        fetchLiveEnergyPricing();
+    });
+}
+
+const btnFetchTop = document.getElementById('btn-fetch-live-energy-top');
+if (btnFetchTop) {
+    btnFetchTop.addEventListener('click', () => {
+        fetchLiveEnergyPricing();
+    });
+}
+
+if (energyBenchmarkTableHeaders) {
+    energyBenchmarkTableHeaders.forEach(th => {
+        th.addEventListener('click', () => {
+            const column = th.getAttribute('data-sort');
+            energyBenchmarkTableHeaders.forEach(header => {
+                if (header !== th) {
+                    header.classList.remove('sorted-asc', 'sorted-desc');
+                    const indicator = header.querySelector('.sort-indicator');
+                    if (indicator) indicator.textContent = '';
+                }
+            });
+
+            if (energyTableSortColumn === column) {
+                energyTableSortDirection = energyTableSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                energyTableSortColumn = column;
+                energyTableSortDirection = 'asc';
+            }
+
+            th.classList.remove('sorted-asc', 'sorted-desc');
+            th.classList.add(energyTableSortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+            const indicator = th.querySelector('.sort-indicator');
+            if (indicator) indicator.textContent = energyTableSortDirection === 'asc' ? ' ↑' : ' ↓';
+
+            renderEnergyInsights();
+        });
+    });
+}
+
+
+// MULTI-FILE UPLOADER HANDLER (SUPPORTS SINGLE AND MULTI-MODEL EXPORTS)
 function handleFilesSelection(filesList) {
     const files = Array.from(filesList);
     let errors = [];
@@ -540,29 +612,51 @@ function handleFilesSelection(filesList) {
                 try {
                     const data = JSON.parse(e.target.result);
                     if (validateUsageData(data)) {
-                        if (!data.by_model || data.by_model.length !== 1) {
-                            errors.push(`${file.name}: Must contain data for exactly ONE model. Found ${data.by_model ? data.by_model.length : 0}. Please export single-model files from the portal.`);
+                        // Normalize daily/hourly/rows
+                        if (!data.daily && data.hourly) data.daily = data.hourly;
+                        if (!data.daily && data.rows) data.daily = data.rows;
+
+                        let byModel = Array.isArray(data.by_model) ? data.by_model : [];
+                        if (byModel.length === 0 && data.model) {
+                            byModel = [{ model: data.model, ...data.totals }];
+                            data.by_model = byModel;
+                        }
+
+                        if (byModel.length === 0) {
+                            errors.push(`${file.name}: Could not identify model usage in JSON export.`);
                             return resolve();
                         }
-                        
-                        const modelName = data.by_model[0].model;
-                        
-                        // Overwrite if same model is re-uploaded
-                        loadedFiles = loadedFiles.filter(f => f.modelName !== modelName);
-                        
-                        // Normalize daily/hourly rows
-                        if (!data.daily && data.hourly) {
-                            data.daily = data.hourly;
+
+                        if (byModel.length === 1) {
+                            const modelName = byModel[0].model;
+                            loadedFiles = loadedFiles.filter(f => f.modelName !== modelName);
+                            loadedFiles.push({
+                                fileName: file.name,
+                                modelName: modelName,
+                                data: data
+                            });
+                            loadedCount++;
+                        } else {
+                            // Multi-model file: import model entries
+                            byModel.forEach(m => {
+                                const modelName = m.model;
+                                const singleData = {
+                                    ...data,
+                                    totals: m.requests !== undefined ? { ...data.totals, ...m } : data.totals,
+                                    by_model: [m],
+                                    available_models: [modelName]
+                                };
+                                loadedFiles = loadedFiles.filter(f => f.modelName !== modelName);
+                                loadedFiles.push({
+                                    fileName: `${file.name} (${modelName})`,
+                                    modelName: modelName,
+                                    data: singleData
+                                });
+                                loadedCount++;
+                            });
                         }
-                        
-                        loadedFiles.push({
-                            fileName: file.name,
-                            modelName: modelName,
-                            data: data
-                        });
-                        loadedCount++;
                     } else {
-                        errors.push(`${file.name}: Invalid Neuralwatt usage schema.`);
+                        errors.push(`${file.name}: Invalid Neuralwatt usage JSON format.`);
                     }
                 } catch (err) {
                     errors.push(`${file.name}: Failed to parse JSON.`);
@@ -580,16 +674,8 @@ function handleFilesSelection(filesList) {
             hideImportErrors();
         }
         if (loadedFiles.length > 0) {
-            // Display dashboard
-            uploadContainer.style.display = 'none';
-            dashboardContainer.style.display = 'block';
-            miniUploadBtn.style.display = 'block';
-            periodBadge.style.display = 'inline-flex';
-            
-            // Compile combined rawData
             compileMergedData();
             
-            // Reset selectors if first load
             if (selectedModel === '') {
                 costCalcMode = 'flat-10';
                 costCalcModeSelect.value = 'flat-10';
@@ -597,7 +683,11 @@ function handleFilesSelection(filesList) {
                 thirdPartyCompareRate = 'auto-match';
                 thirdPartyProviderSelect.value = 'auto-match';
             }
-            
+
+            if (typeof liveEnergyPricingData !== 'undefined' && liveEnergyPricingData.length === 0) {
+                fetchLiveEnergyPricing();
+            }
+
             updateCalculationsAndRender();
         }
     });
@@ -613,16 +703,23 @@ function compileMergedData() {
     let minStart = null;
     let maxEnd = null;
     loadedFiles.forEach(f => {
-        const start = new Date(f.data.period.start);
-        const end = new Date(f.data.period.end);
-        if (!minStart || start < minStart) minStart = start;
-        if (!maxEnd || end > maxEnd) maxEnd = end;
+        if (f.data && f.data.period) {
+            if (f.data.period.start) {
+                const start = new Date(f.data.period.start);
+                if (!isNaN(start.getTime()) && (!minStart || start < minStart)) minStart = start;
+            }
+            if (f.data.period.end) {
+                const end = new Date(f.data.period.end);
+                if (!isNaN(end.getTime()) && (!maxEnd || end > maxEnd)) maxEnd = end;
+            }
+        }
     });
     
+    const firstData = loadedFiles[0].data || {};
     rawData = {
         period: {
-            start: minStart ? minStart.toISOString() : '',
-            end: maxEnd ? maxEnd.toISOString() : ''
+            start: (minStart && !isNaN(minStart.getTime())) ? minStart.toISOString() : new Date().toISOString(),
+            end: (maxEnd && !isNaN(maxEnd.getTime())) ? maxEnd.toISOString() : new Date().toISOString()
         },
         totals: {
             requests: 0,
@@ -648,38 +745,56 @@ function compileMergedData() {
         daily: [],
         available_models: [],
         available_keys: [],
-        accounting_method: loadedFiles[0].data.accounting_method || 'energy',
-        granularity: loadedFiles[0].data.granularity || 'daily'
+        accounting_method: firstData.accounting_method || 'energy',
+        granularity: firstData.granularity || 'daily'
     };
     
     const uniqueKeysMap = new Map();
     
     loadedFiles.forEach(f => {
-        const fd = f.data;
+        const fd = f.data || {};
+        const totals = fd.totals || {};
         
-        rawData.totals.requests += fd.totals.requests || 0;
-        rawData.totals.tokens += fd.totals.tokens || 0;
-        rawData.totals.prompt_tokens += fd.totals.prompt_tokens || 0;
-        rawData.totals.completion_tokens += fd.totals.completion_tokens || 0;
-        rawData.totals.cached_tokens += fd.totals.cached_tokens || 0;
-        rawData.totals.cost += fd.totals.cost || 0;
-        rawData.totals.token_cost += fd.totals.token_cost || 0;
-        rawData.totals.energy_kwh += fd.totals.energy_kwh || 0;
-        rawData.totals.charged_energy_kwh += fd.totals.charged_energy_kwh || 0;
-        rawData.totals.energy_joules += fd.totals.energy_joules || 0;
-        rawData.totals.requests_with_energy += fd.totals.requests_with_energy || 0;
-        rawData.totals.carbon_g += fd.totals.carbon_g || 0;
-        rawData.totals.requests_with_carbon += fd.totals.requests_with_carbon || 0;
-        rawData.totals.self_hosted_cost += fd.totals.self_hosted_cost || 0;
-        rawData.totals.third_party_cost += fd.totals.third_party_cost || 0;
-        rawData.totals.third_party_requests += fd.totals.third_party_requests || 0;
+        rawData.totals.requests += totals.requests || 0;
+        rawData.totals.tokens += totals.tokens || 0;
+        rawData.totals.prompt_tokens += totals.prompt_tokens || 0;
+        rawData.totals.completion_tokens += totals.completion_tokens || 0;
+        rawData.totals.cached_tokens += totals.cached_tokens || 0;
+        rawData.totals.cost += totals.cost || 0;
+        rawData.totals.token_cost += totals.token_cost || 0;
+        rawData.totals.energy_kwh += totals.energy_kwh || 0;
+        rawData.totals.charged_energy_kwh += totals.charged_energy_kwh || 0;
+        rawData.totals.energy_joules += totals.energy_joules || 0;
+        rawData.totals.requests_with_energy += totals.requests_with_energy || 0;
+        rawData.totals.carbon_g += totals.carbon_g || 0;
+        rawData.totals.requests_with_carbon += totals.requests_with_carbon || 0;
+        rawData.totals.self_hosted_cost += totals.self_hosted_cost || 0;
+        rawData.totals.third_party_cost += totals.third_party_cost || 0;
+        rawData.totals.third_party_requests += totals.third_party_requests || 0;
         
-        if (fd.by_model && fd.by_model[0]) {
-            const modelInfo = { ...fd.by_model[0] };
-            modelInfo.prompt_tokens = fd.totals.prompt_tokens || 0;
-            modelInfo.completion_tokens = fd.totals.completion_tokens || 0;
-            rawData.by_model.push(modelInfo);
-            rawData.available_models.push(fd.by_model[0].model);
+        if (Array.isArray(fd.by_model) && fd.by_model.length > 0) {
+            fd.by_model.forEach(m => {
+                const modelInfo = { ...m };
+                modelInfo.prompt_tokens = modelInfo.prompt_tokens || totals.prompt_tokens || 0;
+                modelInfo.completion_tokens = modelInfo.completion_tokens || totals.completion_tokens || 0;
+                rawData.by_model.push(modelInfo);
+                if (!rawData.available_models.includes(m.model)) {
+                    rawData.available_models.push(m.model);
+                }
+            });
+        } else {
+            const modelName = f.modelName || 'Unknown Model';
+            rawData.by_model.push({
+                model: modelName,
+                requests: totals.requests || 0,
+                tokens: totals.tokens || 0,
+                prompt_tokens: totals.prompt_tokens || 0,
+                completion_tokens: totals.completion_tokens || 0,
+                cost: totals.cost || 0
+            });
+            if (!rawData.available_models.includes(modelName)) {
+                rawData.available_models.push(modelName);
+            }
         }
         
         if (fd.by_tier) {
@@ -794,10 +909,7 @@ function renderImportedModelsList() {
                 if (cachePerformanceChart) { cachePerformanceChart.destroy(); cachePerformanceChart = null; }
                 if (costEfficiencyChart) { costEfficiencyChart.destroy(); costEfficiencyChart = null; }
                 rawData = null;
-                uploadContainer.style.display = 'flex';
-                dashboardContainer.style.display = 'none';
-                miniUploadBtn.style.display = 'none';
-                periodBadge.style.display = 'none';
+                updateCalculationsAndRender();
             } else {
                 compileMergedData();
                 updateCalculationsAndRender();
@@ -808,11 +920,9 @@ function renderImportedModelsList() {
 
 // SCHEMA VALIDATOR
 function validateUsageData(data) {
-    return data && 
-           typeof data === 'object' && 
-           data.totals !== undefined && 
-           data.period !== undefined && 
-           (Array.isArray(data.daily) || Array.isArray(data.hourly) || Array.isArray(data.rows));
+    if (!data || typeof data !== 'object') return false;
+    return (data.totals !== undefined || data.by_model !== undefined || data.period !== undefined) && 
+           (Array.isArray(data.daily) || Array.isArray(data.hourly) || Array.isArray(data.rows) || Array.isArray(data.by_model) || Array.isArray(data.usage));
 }
 
 // POPULATE MODELS OPTIONS
@@ -1111,7 +1221,25 @@ function buildModelStats(startDate, endDate) {
 
 // CENTRAL REACTIVE CALCULATOR
 function updateCalculationsAndRender() {
-    if (!rawData) return;
+    const noJsonCard = document.getElementById('no-json-import-card');
+    const jsonLoadedWrapper = document.getElementById('json-loaded-content-wrapper');
+
+    if (!rawData || loadedFiles.length === 0) {
+        if (noJsonCard) noJsonCard.style.display = 'block';
+        if (jsonLoadedWrapper) jsonLoadedWrapper.style.display = 'none';
+        if (miniUploadBtn) miniUploadBtn.style.display = 'none';
+        if (periodBadge) {
+            periodBadge.style.display = 'inline-flex';
+            periodBadge.textContent = 'Live Energy Telemetry View (No JSON Loaded)';
+        }
+        renderEnergyInsights();
+        return;
+    }
+
+    if (noJsonCard) noJsonCard.style.display = 'none';
+    if (jsonLoadedWrapper) jsonLoadedWrapper.style.display = 'block';
+    if (miniUploadBtn) miniUploadBtn.style.display = 'block';
+    if (periodBadge) periodBadge.style.display = 'inline-flex';
 
     // Parse filter dates
     const startDate = filterStartDate ? new Date(filterStartDate + 'T00:00:00') : null;
@@ -1343,6 +1471,7 @@ function updateCalculationsAndRender() {
     renderSummaryStats();
     renderCharts();
     renderModelBreakdown();
+    renderEnergyInsights();
     renderLogsTable();
 }
 
@@ -2175,6 +2304,501 @@ btnExportCsvSubset.addEventListener('click', () => {
     document.body.removeChild(link);
 });
 
-// START BACKGROUND LOAD FOR OPENROUTER & NEURALWATT POSTED RATES
+// UNOFFICIAL ENERGY INSIGHTS CALCULATION & RENDERING ENGINE
+function getPromptBandLabel(avgPromptTokens) {
+    if (avgPromptTokens < 256) return '0–256';
+    if (avgPromptTokens < 1024) return '256–1k';
+    if (avgPromptTokens < 4096) return '1k–4k';
+    if (avgPromptTokens < 16384) return '4k–16k';
+    if (avgPromptTokens < 65536) return '16k–64k';
+    if (avgPromptTokens < 262144) return '64k–256k';
+    return '256k–1M';
+}
+
+function getEnergyBenchmarkForModel(modelName) {
+    if (!modelName) return null;
+    const lower = modelName.toLowerCase();
+    return NEURALWATT_ENERGY_BENCHMARKS.find(b => {
+        if (b.model.toLowerCase() === lower || b.id.toLowerCase() === lower) return true;
+        return b.aliases && b.aliases.some(a => lower.includes(a.toLowerCase()) || a.toLowerCase().includes(lower));
+    }) || null;
+}
+
+function calculateWeightedEnergyForModel(entry, mode = 'telemetry') {
+    if (!entry || !entry.bands) return 0;
+    
+    let totalWeightedMwh = 0;
+    let totalWeight = 0;
+
+    if (mode === 'equal') {
+        entry.bands.forEach(b => {
+            if (b.mwh === null) return;
+            totalWeightedMwh += b.mwh;
+            totalWeight += 1;
+        });
+    } else {
+        // Telemetry mode: weight by req_pct
+        entry.bands.forEach(b => {
+            if (b.mwh === null || b.req_pct === 0) return;
+            totalWeightedMwh += b.mwh * (b.req_pct / 100);
+            totalWeight += (b.req_pct / 100);
+        });
+    }
+
+    return totalWeight > 0 ? (totalWeightedMwh / totalWeight) : 0;
+}
+
+function renderEnergyInsights() {
+    if (!energyBenchmarkTbody) return;
+
+    // Initial Idle State before fetch
+    if (!liveEnergyPricingLoaded && !liveEnergyPricingFetching && !liveEnergyPricingError) {
+        energyBenchmarkTbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-secondary);">
+            <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--text-primary);">⚡ Live Energy Telemetry Ready</div>
+            <div style="font-size: 0.85rem; margin-bottom: 1rem; color: var(--text-secondary);">Import a JSON export above or click below to fetch live energy telemetry from portal.neuralwatt.com.</div>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-fetch-live-energy">⚡ Fetch Live Energy Telemetry</button>
+        </td></tr>`;
+        const btnFetch = document.getElementById('btn-fetch-live-energy');
+        if (btnFetch) {
+            btnFetch.addEventListener('click', () => {
+                fetchLiveEnergyPricing();
+            });
+        }
+        valEnergyWeightedAvg.textContent = '- mWh';
+        valEnergyWeightedSub.textContent = 'Manual sync or file import required';
+        valMostEfficientModel.textContent = '-';
+        valMostEfficientMwh.textContent = '-';
+        if (energyInsightsChart) {
+            energyInsightsChart.destroy();
+            energyInsightsChart = null;
+        }
+        return;
+    }
+
+    // Handle Loading State
+    if (liveEnergyPricingFetching && !liveEnergyPricingLoaded) {
+        energyBenchmarkTbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-secondary);">⚡ Fetching live energy telemetry from portal.neuralwatt.com...</td></tr>`;
+        valEnergyWeightedAvg.textContent = '- mWh';
+        valEnergyWeightedSub.textContent = 'Syncing live telemetry...';
+        valMostEfficientModel.textContent = '-';
+        valMostEfficientMwh.textContent = '-';
+        if (energyInsightsChart) {
+            energyInsightsChart.destroy();
+            energyInsightsChart = null;
+        }
+        return;
+    }
+
+    // Handle Fetch Failure / Error State
+    if (liveEnergyPricingError || !liveEnergyPricingLoaded || NEURALWATT_ENERGY_BENCHMARKS.length === 0) {
+        energyBenchmarkTbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--accent-terracotta); font-weight: 500;">
+            <div style="margin-bottom: 0.75rem;">⚠️ Live energy pricing telemetry could not be fetched from portal.neuralwatt.com.</div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-retry-live-energy">↻ Retry Fetching Live Telemetry</button>
+        </td></tr>`;
+        const btnRetry = document.getElementById('btn-retry-live-energy');
+        if (btnRetry) {
+            btnRetry.addEventListener('click', () => {
+                fetchLiveEnergyPricing();
+            });
+        }
+        valEnergyWeightedAvg.textContent = '- mWh';
+        valEnergyWeightedSub.textContent = 'Live telemetry unavailable';
+        valMostEfficientModel.textContent = '-';
+        valMostEfficientMwh.textContent = '-';
+        if (energyInsightsChart) {
+            energyInsightsChart.destroy();
+            energyInsightsChart = null;
+        }
+        return;
+    }
+
+    // 1. Determine User Request Profile & Band if rawData available
+    let userAvgPromptTokens = 0;
+    let userBand = '-';
+    let userActualMwhPerReq = null;
+    let activeModelEntry = null;
+
+    if (rawData && rawData.totals.requests > 0) {
+        userAvgPromptTokens = Math.round(rawData.totals.prompt_tokens / rawData.totals.requests);
+        userBand = getPromptBandLabel(userAvgPromptTokens);
+        userActualMwhPerReq = ((rawData.totals.energy_kwh * 1000000) / rawData.totals.requests);
+    }
+
+    if (selectedModel) {
+        activeModelEntry = getEnergyBenchmarkForModel(selectedModel);
+    } else if (rawData && rawData.available_models && rawData.available_models.length > 0) {
+        activeModelEntry = getEnergyBenchmarkForModel(rawData.available_models[0]);
+    }
+
+    // 2. Compute Benchmark Models Data with Weighted Energy
+    const benchmarkData = NEURALWATT_ENERGY_BENCHMARKS.map(item => {
+        const weightedMwh = calculateWeightedEnergyForModel(item, 'telemetry');
+        
+        let dominantBand = '—';
+        let maxPct = 0;
+        item.bands.forEach(b => {
+            if (b.req_pct > maxPct) {
+                maxPct = b.req_pct;
+                dominantBand = b.band;
+            }
+        });
+
+        return {
+            ...item,
+            weightedMwh: weightedMwh,
+            dominantBand: dominantBand,
+            maxPct: maxPct
+        };
+    });
+
+    // 3. Find Most Efficient Model
+    let mostEfficient = benchmarkData[0];
+    benchmarkData.forEach(b => {
+        if (b.weightedMwh > 0 && b.weightedMwh < mostEfficient.weightedMwh) {
+            mostEfficient = b;
+        }
+    });
+
+    // 4. Update Stat Summary Cards
+    const targetModelForStat = activeModelEntry ? benchmarkData.find(b => b.id === activeModelEntry.id) : benchmarkData[0];
+    const statWeightedValue = targetModelForStat ? targetModelForStat.weightedMwh : 0;
+
+    valEnergyWeightedAvg.textContent = `${statWeightedValue.toFixed(1)} mWh`;
+    valEnergyWeightedSub.textContent = targetModelForStat 
+        ? `${targetModelForStat.model} telemetry weighted` 
+        : 'Telemetry weighted baseline';
+
+    valUserReqSize.textContent = userAvgPromptTokens > 0 ? `${formatTokens(userAvgPromptTokens)} prompt tokens` : 'No JSON data';
+    valUserReqBand.textContent = userBand !== '-' ? `Typical band: ${userBand}` : 'Upload export to position';
+
+    if (userActualMwhPerReq !== null) {
+        valUserMwhReq.textContent = `${userActualMwhPerReq.toFixed(1)} mWh`;
+        if (targetModelForStat && targetModelForStat.weightedMwh > 0) {
+            const diffPct = ((userActualMwhPerReq - targetModelForStat.weightedMwh) / targetModelForStat.weightedMwh) * 100;
+            const diffSign = diffPct >= 0 ? '+' : '';
+            valUserMwhVsBenchmark.textContent = `${diffSign}${diffPct.toFixed(1)}% vs ${targetModelForStat.model} avg`;
+        } else {
+            valUserMwhVsBenchmark.textContent = 'Actual measured from JSON export';
+        }
+    } else {
+        valUserMwhReq.textContent = '- mWh';
+        valUserMwhVsBenchmark.textContent = 'Import single-model file to calculate';
+    }
+
+    valMostEfficientModel.textContent = mostEfficient ? mostEfficient.model : '-';
+    valMostEfficientMwh.textContent = mostEfficient ? `${mostEfficient.weightedMwh.toFixed(1)} mWh / request` : '-';
+
+    // 5. Apply Table Sorting
+    const sortedData = [...benchmarkData].sort((a, b) => {
+        let valA, valB;
+        if (energyTableSortColumn === 'model') {
+            valA = a.model.toLowerCase();
+            valB = b.model.toLowerCase();
+        } else if (energyTableSortColumn === 'weighted') {
+            valA = a.weightedMwh;
+            valB = b.weightedMwh;
+        } else {
+            // Band sort
+            const bandA = a.bands.find(x => x.band === energyTableSortColumn);
+            const bandB = b.bands.find(x => x.band === energyTableSortColumn);
+            valA = (bandA && bandA.mwh !== null) ? bandA.mwh : Infinity;
+            valB = (bandB && bandB.mwh !== null) ? bandB.mwh : Infinity;
+        }
+
+        if (valA < valB) return energyTableSortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return energyTableSortDirection === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    // 6. Render Table Rows
+    energyBenchmarkTbody.innerHTML = '';
+    sortedData.forEach(item => {
+        const tr = document.createElement('tr');
+        const isActive = activeModelEntry && (item.id === activeModelEntry.id || item.model === activeModelEntry.model);
+        if (isActive) {
+            tr.classList.add('active-model-row');
+        }
+
+        let cellsHtml = `
+            <td class="font-mono" style="white-space: nowrap;">
+                ${isActive ? '<span class="terracotta-dot">★ </span>' : ''}<strong>${item.model}</strong>
+            </td>
+            <td class="weighted-col-cell font-mono text-terracotta" style="white-space: nowrap;">
+                ${item.weightedMwh.toFixed(1)} mWh
+                <div class="energy-cell-sub">Top band: ${item.dominantBand} (${item.maxPct}%)</div>
+            </td>
+        `;
+
+        item.bands.forEach(b => {
+            if (b.mwh === null) {
+                cellsHtml += `<td style="text-align: right; color: var(--text-secondary); opacity: 0.5;" title="Too few measured requests in this size band">—</td>`;
+            } else {
+                const titleTooltip = `Average energy over real traffic. Measured at a ${b.cache_hit_pct !== null ? b.cache_hit_pct + '%' : '0%'} avg cache-hit rate in this size band. ${b.req_pct}% of total telemetry requests.`;
+                cellsHtml += `
+                    <td style="text-align: right;" title="${titleTooltip}">
+                        <div class="energy-cell-primary">${b.display}</div>
+                        <div class="energy-cell-sub">${b.req_pct}% reqs</div>
+                    </td>
+                `;
+            }
+        });
+
+        tr.innerHTML = cellsHtml;
+        energyBenchmarkTbody.appendChild(tr);
+    });
+
+    // 7. Populate Landing Page Live Telemetry Table (if on landing view)
+    const landingTbody = document.getElementById('landing-energy-benchmark-tbody');
+    if (landingTbody) {
+        landingTbody.innerHTML = '';
+        sortedData.forEach(item => {
+            const tr = document.createElement('tr');
+            let cellsHtml = `
+                <td class="font-mono" style="white-space: nowrap;"><strong>${item.model}</strong></td>
+                <td class="weighted-col-cell font-mono text-terracotta" style="white-space: nowrap;">${item.weightedMwh.toFixed(1)} mWh</td>
+            `;
+            item.bands.forEach(b => {
+                cellsHtml += `<td style="text-align: right;">${b.mwh === null ? '—' : b.display}</td>`;
+            });
+            tr.innerHTML = cellsHtml;
+            landingTbody.appendChild(tr);
+        });
+    }
+
+    // 8. Render Chart
+    renderEnergyInsightsChart(sortedData, activeModelEntry);
+}
+
+function renderEnergyInsightsChart(data, activeModelEntry) {
+    const canvas = document.getElementById('energyInsightsChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (energyInsightsChart) {
+        energyInsightsChart.destroy();
+        energyInsightsChart = null;
+    }
+
+    if (typeof Chart === 'undefined') return;
+
+    const isDarkMode = bodyEl.classList.contains('dark-mode');
+    const textColor = isDarkMode ? '#9BAA95' : '#858458';
+    const gridColor = isDarkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
+    const primaryBarColor = isDarkMode ? '#2dd4bf' : '#0f766e';
+    const activeBarColor = isDarkMode ? '#E86C45' : '#D55934';
+
+    const labels = data.map(d => d.model);
+    const chartValues = data.map(d => parseFloat(d.weightedMwh.toFixed(1)));
+    const backgroundColors = data.map(d => {
+        const isActive = activeModelEntry && (d.id === activeModelEntry.id || d.model === activeModelEntry.model);
+        return isActive ? activeBarColor : primaryBarColor;
+    });
+
+    energyInsightsChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Weighted Energy (mWh / request)',
+                data: chartValues,
+                backgroundColor: backgroundColors,
+                borderRadius: 6,
+                borderSkipped: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: { color: textColor, font: { family: 'Inter', size: 12 } }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.raw} mWh`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: textColor, font: { family: 'Inter', size: 11 }, maxRotation: 45 },
+                    grid: { color: gridColor }
+                },
+                y: {
+                    ticks: { color: textColor, font: { family: 'JetBrains Mono', size: 11 }, callback: v => v + ' mWh' },
+                    grid: { color: gridColor },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+// DYNAMICALLY FETCH LIVE ENERGY PRICING TELEMETRY FROM WEBSITE (STRICT LIVE-ONLY, NO STALE FALLBACK)
+async function fetchLiveEnergyPricing() {
+    const energyStatusBadge = document.getElementById('energy-status-badge');
+    const updateBadge = (status, timeStr = '') => {
+        if (!energyStatusBadge) return;
+        if (status === 'syncing') {
+            energyStatusBadge.className = 'legend-chip live-sync-chip';
+            energyStatusBadge.innerHTML = `<span class="live-dot">●</span> Syncing live portal telemetry...`;
+        } else if (status === 'live') {
+            energyStatusBadge.className = 'legend-chip live-sync-chip';
+            energyStatusBadge.innerHTML = `<span class="live-dot">●</span> Live Sync (portal.neuralwatt.com) ${timeStr ? '· updated ' + timeStr : ''}`;
+        } else {
+            energyStatusBadge.className = 'legend-chip offline-fallback-chip';
+            energyStatusBadge.innerHTML = `<span class="offline-dot">✕</span> Failed to load live data (No fallback)`;
+        }
+    };
+
+    liveEnergyPricingFetching = true;
+    liveEnergyPricingLoaded = false;
+    liveEnergyPricingError = null;
+    updateBadge('syncing');
+    renderEnergyInsights();
+
+    const parseEnergyHtml = (html) => {
+        try {
+            if (!html || typeof html !== 'string') return false;
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            const table = doc.querySelector('table');
+            if (!table) return false;
+
+            const rows = table.querySelectorAll('tr');
+            if (!rows || rows.length < 2) return false;
+
+            const updatedBenchmarks = [];
+            const bandHeaders = ['0–256', '256–1k', '1k–4k', '4k–16k', '16k–64k', '64k–256k', '256k–1M'];
+
+            rows.forEach(row => {
+                const tds = row.querySelectorAll('td');
+                if (!tds || tds.length < 8) return;
+
+                const modelName = tds[0].textContent.trim();
+                if (!modelName || modelName.toLowerCase() === 'model') return;
+
+                const bands = [];
+                for (let idx = 1; idx <= 7; idx++) {
+                    const cell = tds[idx];
+                    const bandLabel = bandHeaders[idx - 1] || '';
+                    
+                    let display = '—';
+                    let mwh = null;
+                    let req_pct = 0;
+                    let cache_hit_pct = null;
+
+                    if (cell) {
+                        const cellText = cell.textContent.trim();
+                        const energyDiv = cell.querySelector('.num') || cell;
+                        if (energyDiv) {
+                            const rawText = energyDiv.textContent.trim();
+                            if (rawText && !rawText.startsWith('—')) {
+                                const cleanText = rawText.replace('~', '').trim();
+                                display = cleanText;
+                                const match = cleanText.match(/(\d+(?:\.\d+)?)\s*(mWh|Wh)/i);
+                                if (match) {
+                                    const val = parseFloat(match[1]);
+                                    const unit = match[2];
+                                    mwh = unit.toLowerCase() === 'wh' ? val * 1000 : val;
+                                }
+                            }
+                            const titleAttr = energyDiv.getAttribute('title') || cell.getAttribute('title') || '';
+                            const cacheMatch = titleAttr.match(/(\d+)%\s*average cache-hit rate/i);
+                            if (cacheMatch) {
+                                cache_hit_pct = parseInt(cacheMatch[1], 10);
+                            }
+                        }
+
+                        const pctMatch = cellText.match(/(\d+(?:\.\d+)?)%\s*of reqs/i);
+                        if (pctMatch) {
+                            req_pct = parseFloat(pctMatch[1]);
+                        }
+                    }
+
+                    bands.push({
+                        band: bandLabel,
+                        display: display,
+                        mwh: mwh,
+                        req_pct: req_pct,
+                        cache_hit_pct: cache_hit_pct
+                    });
+                }
+
+                const modelId = modelName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                updatedBenchmarks.push({
+                    model: modelName,
+                    id: modelId,
+                    aliases: [modelId, modelName.toLowerCase()],
+                    bands: bands
+                });
+            });
+
+            if (updatedBenchmarks.length > 0) {
+                NEURALWATT_ENERGY_BENCHMARKS.length = 0;
+                NEURALWATT_ENERGY_BENCHMARKS.push(...updatedBenchmarks);
+                return true;
+            }
+        } catch (err) {
+            console.error('Error parsing live energy pricing HTML:', err);
+        }
+        return false;
+    };
+
+    const fetchTargets = [
+        async () => {
+            const res = await fetch('https://portal.neuralwatt.com/energy-pricing', { cache: 'no-cache' });
+            if (!res.ok) throw new Error('Direct fetch failed');
+            return await res.text();
+        },
+        async () => {
+            const res = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://portal.neuralwatt.com/energy-pricing'), { cache: 'no-cache' });
+            if (!res.ok) throw new Error('AllOrigins JSON fetch failed');
+            const data = await res.json();
+            return data && data.contents ? data.contents : null;
+        },
+        async () => {
+            const res = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent('https://portal.neuralwatt.com/energy-pricing'), { cache: 'no-cache' });
+            if (!res.ok) throw new Error('AllOrigins raw fetch failed');
+            return await res.text();
+        },
+        async () => {
+            const res = await fetch('https://corsproxy.io/?' + encodeURIComponent('https://portal.neuralwatt.com/energy-pricing'), { cache: 'no-cache' });
+            if (!res.ok) throw new Error('CorsProxy fetch failed');
+            return await res.text();
+        }
+    ];
+
+    for (const getHtml of fetchTargets) {
+        try {
+            const htmlText = await getHtml();
+            if (htmlText && (htmlText.includes('Average energy per request') || htmlText.includes('0–256'))) {
+                const success = parseEnergyHtml(htmlText);
+                if (success) {
+                    liveEnergyPricingLoaded = true;
+                    liveEnergyPricingFetching = false;
+                    updateBadge('live', new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+                    renderEnergyInsights();
+                    return;
+                }
+            }
+        } catch (e) {
+            // Try next fetch target
+        }
+    }
+
+    liveEnergyPricingLoaded = false;
+    liveEnergyPricingFetching = false;
+    liveEnergyPricingError = 'Failed to fetch live telemetry';
+    NEURALWATT_ENERGY_BENCHMARKS.length = 0;
+    updateBadge('error');
+    renderEnergyInsights();
+}
+
+// START BACKGROUND LOAD FOR OPENROUTER AND NEURALWATT POSTED RATES
 fetchOpenRouterModels();
 fetchNeuralwattPricing();

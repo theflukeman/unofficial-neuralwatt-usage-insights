@@ -29,8 +29,8 @@
                     <span class="logo-accent">⚡</span>
                     <h1>Unofficial Neuralwatt <span class="logo-sub">Usage Insights</span></h1>
                 </div>
-                <div class="header-badge" id="period-badge" style="display: none;">
-                    No file loaded
+                <div class="header-badge" id="period-badge">
+                    Live Energy Telemetry View
                 </div>
             </div>
             
@@ -66,7 +66,7 @@
             </div>
         </header>
 
-        <!-- Import Error Banner (shown on both upload and dashboard states) -->
+        <!-- Import Error Banner -->
         <div class="import-error-banner" id="import-error-banner" role="alert" aria-live="polite" style="display: none;">
             <div class="import-error-banner-header">
                 <strong>Import Results</strong>
@@ -75,329 +75,337 @@
             <ul class="import-error-list"></ul>
         </div>
 
-        <!-- Blank State / Main Upload Container -->
-        <section class="upload-section" id="upload-container">
-            <div class="upload-card">
-                <div class="upload-icon">⚡</div>
-                <h2>Import Usage Analytics</h2>
-                <div style="font-size: 0.7rem; color: var(--accent-terracotta); font-weight: 700; text-transform: uppercase; margin-bottom: 0.75rem; letter-spacing: 0.75px;">Unofficial 3rd-Party Utility</div>
-                <p>Drag and drop single-model Neuralwatt JSON exports here (upload multiple to combine), or click to browse files.</p>
-                
-                <div class="directions-list">
-                    <h4>How to Get Your Data:</h4>
-                    <p class="directions-subtext">Choose your preferred export method below:</p>
-                    
-                    <div class="export-methods-grid">
-                        <div class="export-method-card bookmarklet-card">
-                            <div class="method-badge">Recommended</div>
-                            <h5>⚡ 1-Click Batch Export Bookmarklet</h5>
-                            <p class="method-desc">Automatically export JSON data for all model IDs in your timezone with one click.</p>
-                            
-                            <div class="bm-generator-controls">
-                                <div class="bm-control-group">
-                                    <label for="bm-time-unit">Time Unit</label>
-                                    <select id="bm-time-unit" class="bm-select">
-                                        <option value="days" selected>Days</option>
-                                        <option value="hours">Hours</option>
-                                    </select>
-                                </div>
-                                <div class="bm-control-group">
-                                    <label for="bm-time-val" id="bm-time-val-label">Duration (Days)</label>
-                                    <input type="number" id="bm-time-val" class="bm-input" min="1" max="365" value="30">
-                                </div>
-                                <div class="bm-control-group">
-                                    <label for="bm-timezone">Timezone</label>
-                                    <input type="text" id="bm-timezone" class="bm-input" placeholder="America/New_York">
-                                </div>
-                            </div>
-                            
-                            <div class="bm-actions">
-                                <a id="bookmarklet-link" href="#" class="btn btn-primary btn-sm bm-drag-btn" title="Drag to Bookmarks Bar">
-                                    ⚡ Batch Export Neuralwatt Data (30d)
-                                </a>
-                                <button id="copy-bookmarklet-btn" class="btn btn-secondary btn-sm" type="button" aria-label="Copy Bookmarklet Code">
-                                    <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 012-2v-8a2 2 0 01-2-2h-8a2 2 0 01-2 2v8a2 2 0 012 2z" />
+        <!-- Main Dashboard Container (Always Visible) -->
+        <main class="dashboard-content" id="dashboard-container">
+            
+            <!-- 1. WHEN NO JSON IS LOADED: Import Usage Analytics & Data Export Panel -->
+            <div id="no-json-import-card" class="upload-section">
+                <div class="landing-hero-container">
+                    <div class="splash-grid">
+                        
+                        <!-- Left Column: File Drop & Import -->
+                        <div class="splash-col-main">
+                            <div class="upload-card">
+                                <div class="upload-icon">⚡</div>
+                                <h2>Import Usage JSON Exports</h2>
+                                <p>Drag & drop single-model Neuralwatt JSON exports here to analyze costs, token breakdown, energy & carbon footprint, and savings.</p>
+
+                                <div class="drop-zone" id="drop-zone">
+                                    <svg class="drop-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                                     </svg>
-                                    <span id="copy-bookmarklet-text">Copy Code</span>
-                                </button>
-                            </div>
-                            <div class="bm-tip">
-                                📌 <strong>2-Click Process:</strong> Drag to Bookmarks Bar. <strong>Click 1:</strong> Opens/reloads <a href="https://portal.neuralwatt.com/dashboard/usage" target="_blank" rel="noopener">Neuralwatt Usage Page</a> with your selected options. <strong>Click 2:</strong> Click bookmarklet again on that loaded page to batch-download all model JSON exports!
+                                    <span>Drop exported model JSON files here</span>
+                                    <div class="drop-zone-actions">
+                                        <label for="main-file-input" class="btn btn-primary">Browse Files</label>
+                                    </div>
+                                    <input type="file" id="main-file-input" accept=".json" multiple style="display: none;">
+                                </div>
+                                
+                                <div class="hint-text">
+                                    Only <code>.json</code> exports are supported. Your data stays completely in your browser and is never uploaded to any server.
+                                </div>
                             </div>
                         </div>
 
-                        <div class="export-method-card manual-card">
-                            <h5>📄 Manual Export</h5>
-                            <ol>
-                                <li>Go to <a href="https://portal.neuralwatt.com/dashboard/usage" target="_blank" rel="noopener">Neuralwatt Usage Analytics Portal</a>.</li>
-                                <li>Select date/hour range and a single model.</li>
-                                <li>Click <strong>Export as JSON</strong>.</li>
-                                <li>Repeat per model as needed.</li>
-                            </ol>
+                        <!-- Right Column: How to Export Data -->
+                        <div class="splash-col-side">
+                            <div class="export-methods-card">
+                                <h4>How to Get Your Data</h4>
+                                <p class="directions-subtext">Choose your preferred export method:</p>
+                                
+                                <!-- 1-Click Bookmarklet Card -->
+                                <div class="export-method-card bookmarklet-card">
+                                    <div class="method-badge">Recommended</div>
+                                    <h5>⚡ 1-Click Batch Export Bookmarklet</h5>
+                                    <p class="method-desc">Automatically export JSON data for all model IDs in your timezone with one click.</p>
+                                    
+                                    <div class="bm-generator-controls">
+                                        <div class="bm-control-group">
+                                            <label for="bm-time-unit">Time Unit</label>
+                                            <select id="bm-time-unit" class="bm-select">
+                                                <option value="days" selected>Days</option>
+                                                <option value="hours">Hours</option>
+                                            </select>
+                                        </div>
+                                        <div class="bm-control-group">
+                                            <label for="bm-time-val" id="bm-time-val-label">Duration (Days)</label>
+                                            <input type="number" id="bm-time-val" class="bm-input" min="1" max="365" value="30">
+                                        </div>
+                                        <div class="bm-control-group">
+                                            <label for="bm-timezone">Timezone</label>
+                                            <input type="text" id="bm-timezone" class="bm-input" placeholder="America/New_York">
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="bm-actions">
+                                        <a id="bookmarklet-link" href="#" class="btn btn-primary btn-sm bm-drag-btn" title="Drag to Bookmarks Bar">
+                                            ⚡ Batch Export Data (30d)
+                                        </a>
+                                        <button id="copy-bookmarklet-btn" class="btn btn-secondary btn-sm" type="button" aria-label="Copy Bookmarklet Code">
+                                            <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 012-2v-8a2 2 0 01-2-2h-8a2 2 0 01-2 2v8a2 2 0 012 2z" />
+                                            </svg>
+                                            <span id="copy-bookmarklet-text">Copy Code</span>
+                                        </button>
+                                    </div>
+                                    <div class="bm-tip">
+                                        📌 Drag button to Bookmarks Bar &rarr; click on <a href="https://portal.neuralwatt.com/dashboard/usage" target="_blank" rel="noopener">Neuralwatt Usage Page</a> to download all model exports.
+                                    </div>
+                                </div>
+
+                                <!-- Manual Steps -->
+                                <div class="export-method-card manual-card">
+                                    <h5>📄 Manual Export Steps</h5>
+                                    <ol class="manual-steps-list">
+                                        <li>Go to <a href="https://portal.neuralwatt.com/dashboard/usage" target="_blank" rel="noopener">Neuralwatt Usage Analytics Portal</a>.</li>
+                                        <li>Select date/hour range and a single model.</li>
+                                        <li>Click <strong>Export as JSON</strong>.</li>
+                                    </ol>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- 2. WHEN JSON IS LOADED: Controls, Summary Stats, Charts, Breakdown, Logs -->
+            <div id="json-loaded-content-wrapper" style="display: none;">
                 
-                <div class="drop-zone" id="drop-zone">
-                    <svg class="drop-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    <span>Drop exported model JSON files here</span>
-                    <label for="main-file-input" class="btn btn-primary">Browse Files</label>
-                    <input type="file" id="main-file-input" accept=".json" multiple style="display: none;">
-                </div>
+                <!-- Dashboard Controls -->
+                <section class="controls-panel">
+                    <div class="controls-left">
+                        <div class="control-group">
+                            <label for="model-filter-select">Filter by Model</label>
+                            <select id="model-filter-select" class="control-select">
+                                <option value="">All Models</option>
+                            </select>
+                        </div>
+                        
+                        <div class="control-group">
+                            <label for="start-date-filter">Start Date</label>
+                            <input type="date" id="start-date-filter" class="control-input" style="width: 140px; cursor: pointer; font-family: var(--font-body);">
+                        </div>
+                        
+                        <div class="control-group">
+                            <label for="end-date-filter">End Date</label>
+                            <input type="date" id="end-date-filter" class="control-input" style="width: 140px; cursor: pointer; font-family: var(--font-body);">
+                        </div>
+                        
+                        <div class="control-group">
+                            <label for="cost-calc-mode">Energy Cost Base</label>
+                            <select id="cost-calc-mode" class="control-select">
+                                <option value="flat-10" selected>Flat $10.00 / kWh</option>
+                                <optgroup label="Monthly Plans">
+                                    <option value="plan-basic">Basic Plan ($8.50 / kWh)</option>
+                                    <option value="plan-std">Standard Plan ($8.00 / kWh)</option>
+                                    <option value="plan-pro">Pro Plan ($7.50 / kWh)</option>
+                                </optgroup>
+                                <optgroup label="Annual Plans (2 Months Free)">
+                                    <option value="plan-basic-yr">Basic Annual (~$7.08 / kWh)</option>
+                                    <option value="plan-std-yr">Standard Annual (~$6.67 / kWh)</option>
+                                    <option value="plan-pro-yr">Pro Annual ($6.25 / kWh)</option>
+                                </optgroup>
+                                <optgroup label="Other Options">
+                                    <option value="json">Use Cost from JSON</option>
+                                    <option value="custom">Custom Rate ($/kWh)...</option>
+                                </optgroup>
+                            </select>
+                        </div>
+
+                        <div id="custom-rate-container" style="display: none;" class="control-group">
+                            <label for="custom-rate-input">Custom $/kWh</label>
+                            <div class="custom-input-wrapper">
+                                <input type="number" id="custom-rate-input" value="10.00" step="0.01" min="0" class="control-input">
+                                <span>/ kWh</span>
+                            </div>
+                        </div>
+                        
+                        <div class="control-group">
+                            <label for="third-party-provider">Token Compare Rate</label>
+                            <select id="third-party-provider" class="control-select">
+                                <option value="auto-match" selected>Auto-Match (OpenRouter Live)</option>
+                                <option value="auto-match-neuralwatt">Auto-Match (Neuralwatt Posted Pricing)</option>
+                                <option value="auto-match-provider">Auto-Match (Official Provider Pricing)</option>
+                                <option value="custom-rates">Custom Rates ($/Mtok)...</option>
+                            </select>
+                        </div>
+                        
+                        <div id="custom-third-party-container" style="display: none; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end;">
+                            <div class="control-group">
+                                <label for="custom-tp-input">Input Cost ($/M)</label>
+                                <input type="number" id="custom-tp-input" value="1.00" step="0.01" min="0" class="control-input" style="width: 100px;">
+                            </div>
+                            <div class="control-group">
+                                <label for="custom-tp-cache">Cache Cost ($/M)</label>
+                                <input type="number" id="custom-tp-cache" value="0.50" step="0.01" min="0" class="control-input" style="width: 100px;">
+                            </div>
+                            <div class="control-group">
+                                <label for="custom-tp-output">Output Cost ($/M)</label>
+                                <input type="number" id="custom-tp-output" value="3.00" step="0.01" min="0" class="control-input" style="width: 100px;">
+                            </div>
+                        </div>
+                        
+                        <div class="methodology-note">
+                            <strong>Methodology Note:</strong> Daily exports only contain total and cached token counts; the detailed split (input vs. output) is only provided as an aggregate for the entire period. Day-level splits are estimated by applying the overall period's prompt/completion ratio to each day's total tokens.
+                        </div>
+                    </div>
+
+                    <div class="controls-right">
+                        <div class="control-group" style="width: 100%; height: 100%; display: flex; flex-direction: column;">
+                            <label>Imported Model Files</label>
+                            <div id="imported-models-list" class="imported-models-list">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
                 
-                <div class="hint-text">
-                    Only <code>.json</code> exports are supported. Your data stays completely in your browser and is never uploaded to any server.
-                </div>
-            </div>
-        </section>
-
-        <!-- Dashboard Content Container (Initially Hidden) -->
-        <main class="dashboard-content" id="dashboard-container" style="display: none;">
-            
-            <!-- Dashboard Controls -->
-            <section class="controls-panel">
-                <div class="controls-left">
-                    <div class="control-group">
-                        <label for="model-filter-select">Filter by Model</label>
-                        <select id="model-filter-select" class="control-select">
-                            <option value="">All Models</option>
-                        </select>
-                    </div>
-                    
-                    <div class="control-group">
-                        <label for="start-date-filter">Start Date</label>
-                        <input type="date" id="start-date-filter" class="control-input" style="width: 140px; cursor: pointer; font-family: var(--font-body);">
-                    </div>
-                    
-                    <div class="control-group">
-                        <label for="end-date-filter">End Date</label>
-                        <input type="date" id="end-date-filter" class="control-input" style="width: 140px; cursor: pointer; font-family: var(--font-body);">
-                    </div>
-                    
-                    <div class="control-group">
-                        <label for="cost-calc-mode">Energy Cost Base</label>
-                        <select id="cost-calc-mode" class="control-select">
-                            <option value="flat-10" selected>Flat $10.00 / kWh</option>
-                            <optgroup label="Monthly Plans">
-                                <option value="plan-basic">Basic Plan ($8.50 / kWh)</option>
-                                <option value="plan-std">Standard Plan ($8.00 / kWh)</option>
-                                <option value="plan-pro">Pro Plan ($7.50 / kWh)</option>
-                            </optgroup>
-                            <optgroup label="Annual Plans (2 Months Free)">
-                                <option value="plan-basic-yr">Basic Annual (~$7.08 / kWh)</option>
-                                <option value="plan-std-yr">Standard Annual (~$6.67 / kWh)</option>
-                                <option value="plan-pro-yr">Pro Annual ($6.25 / kWh)</option>
-                            </optgroup>
-                            <optgroup label="Other Options">
-                                <option value="json">Use Cost from JSON</option>
-                                <option value="custom">Custom Rate ($/kWh)...</option>
-                            </optgroup>
-                        </select>
-                    </div>
-
-                    <div id="custom-rate-container" style="display: none;" class="control-group">
-                        <label for="custom-rate-input">Custom $/kWh</label>
-                        <div class="custom-input-wrapper">
-                            <input type="number" id="custom-rate-input" value="10.00" step="0.01" min="0" class="control-input">
-                            <span>/ kWh</span>
-                        </div>
-                    </div>
-                    
-                    <div class="control-group">
-                        <label for="third-party-provider">Token Compare Rate</label>
-                        <select id="third-party-provider" class="control-select">
-                            <option value="auto-match" selected>Auto-Match (OpenRouter Live)</option>
-                            <option value="auto-match-neuralwatt">Auto-Match (Neuralwatt Posted Pricing)</option>
-                            <option value="auto-match-provider">Auto-Match (Official Provider Pricing)</option>
-                            <option value="custom-rates">Custom Rates ($/Mtok)...</option>
-                            <!-- Dynamic OpenRouter models appended here -->
-                        </select>
-                    </div>
-                    
-                    <div id="custom-third-party-container" style="display: none; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end;">
-                        <div class="control-group">
-                            <label for="custom-tp-input">Input Cost ($/M)</label>
-                            <input type="number" id="custom-tp-input" value="1.00" step="0.01" min="0" class="control-input" style="width: 100px;">
-                        </div>
-                        <div class="control-group">
-                            <label for="custom-tp-cache">Cache Cost ($/M)</label>
-                            <input type="number" id="custom-tp-cache" value="0.50" step="0.01" min="0" class="control-input" style="width: 100px;">
-                        </div>
-                        <div class="control-group">
-                            <label for="custom-tp-output">Output Cost ($/M)</label>
-                            <input type="number" id="custom-tp-output" value="3.00" step="0.01" min="0" class="control-input" style="width: 100px;">
-                        </div>
-                    </div>
-                    
-                    <div class="methodology-note">
-                        <strong>Methodology Note:</strong> Daily exports only contain total and cached token counts; the detailed split (input vs. output) is only provided as an aggregate for the entire period. Day-level splits are estimated by applying the overall period's prompt/completion ratio to each day's total tokens.
-                    </div>
-                </div>
-
-                <div class="controls-right">
-                    <div class="control-group" style="width: 100%; height: 100%; display: flex; flex-direction: column;">
-                        <label>Imported Model Files</label>
-                        <div id="imported-models-list" class="imported-models-list">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-                </div>
-            </section>
-            
-            <!-- Summary Stats Cards -->
-            <div class="stats-grid">
-                <!-- Requests & Tokens Card -->
-                <div class="stat-card">
-                    <div class="card-top">
-                        <div class="card-header">
-                            <span class="card-title">Requests & Tokens</span>
-                            <div class="card-icon blue-bg">⚡</div>
-                        </div>
-                        <div class="card-dual-metrics">
-                            <div class="metric-block">
-                                <div class="card-value" id="val-requests">-</div>
-                                <span class="metric-label">Total Requests</span>
+                <!-- Summary Stats Cards -->
+                <div class="stats-grid" id="stats-container">
+                    <!-- Requests & Tokens Card -->
+                    <div class="stat-card">
+                        <div class="card-top">
+                            <div class="card-header">
+                                <span class="card-title">Requests & Tokens</span>
+                                <div class="card-icon blue-bg">⚡</div>
                             </div>
-                            <div class="metric-block">
-                                <div class="card-value" id="val-tokens">-</div>
-                                <span class="metric-label">Total Tokens</span>
+                            <div class="card-dual-metrics">
+                                <div class="metric-block">
+                                    <div class="card-value" id="val-requests">-</div>
+                                    <span class="metric-label">Total Requests</span>
+                                </div>
+                                <div class="metric-block">
+                                    <div class="card-value" id="val-tokens">-</div>
+                                    <span class="metric-label">Total Tokens</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Tokens & Cache Card -->
-                <div class="stat-card">
-                    <div class="card-top">
-                        <div class="card-header">
-                            <span class="card-title">Tokens & Cache</span>
-                            <div class="card-icon green-bg">🪙</div>
-                        </div>
-                        <div class="token-breakdown-stack">
-                            <div class="metric-row">
-                                <span class="token-breakdown-value" id="val-tokens-prompt">-</span>
-                                <span class="token-breakdown-label">Input</span>
+                    <!-- Tokens & Cache Card -->
+                    <div class="stat-card">
+                        <div class="card-top">
+                            <div class="card-header">
+                                <span class="card-title">Tokens & Cache</span>
+                                <div class="card-icon green-bg">🪙</div>
                             </div>
-                            <div class="metric-row highlight-cache">
-                                <span class="token-breakdown-value text-green" id="val-tokens-cached">-</span>
-                                <span class="token-breakdown-label">Cached</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="token-breakdown-value" id="val-tokens-completion">-</span>
-                                <span class="token-breakdown-label">Output</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-bottom">
-                        <div class="card-progress-container">
-                            <div class="progress-bar-label">
-                                <span>Cache Hit Rate</span>
-                                <span id="val-cache-percent" class="font-mono font-semibold text-green">-</span>
-                            </div>
-                            <div class="progress-bar-bg">
-                                <div class="progress-bar-fill green-bar" id="bar-cache-fill" style="width: 0%"></div>
+                            <div class="token-breakdown-stack">
+                                <div class="metric-row">
+                                    <span class="token-breakdown-value" id="val-tokens-prompt">-</span>
+                                    <span class="token-breakdown-label">Input</span>
+                                </div>
+                                <div class="metric-row highlight-cache">
+                                    <span class="token-breakdown-value text-green" id="val-tokens-cached">-</span>
+                                    <span class="token-breakdown-label">Cached</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="token-breakdown-value" id="val-tokens-completion">-</span>
+                                    <span class="token-breakdown-label">Output</span>
+                                </div>
                             </div>
                         </div>
+                        <div class="card-sub text-green font-mono" id="val-cache-rate">-</div>
                     </div>
-                </div>
 
-                <!-- Costs & Savings Card -->
-                <div class="stat-card highlighted">
-                    <div class="card-top">
-                        <div class="card-header">
-                            <span class="card-title">Cost & Estimated Savings</span>
-                            <div class="card-icon terracotta-bg">💰</div>
+                    <!-- Total Cost Card -->
+                    <div class="stat-card">
+                        <div class="card-top">
+                            <div class="card-header">
+                                <span class="card-title">Total Cost (Energy-Based)</span>
+                                <div class="card-icon orange-bg">💰</div>
+                            </div>
+                            <div class="card-value text-terracotta" id="val-cost-total">-</div>
                         </div>
-                        <div class="card-value" id="val-energy-cost">-</div>
+                        <div class="card-sub" id="val-cost-sub">Energy-based pricing</div>
                     </div>
-                    <div class="card-bottom">
-                        <div class="savings-container">
-                            <div class="savings-amount" id="val-savings-amount">Saved -</div>
-                            <div class="savings-badge" id="val-savings-pct">-%</div>
+
+                    <!-- Energy & Carbon Footprint Card -->
+                    <div class="stat-card">
+                        <div class="card-top">
+                            <div class="card-header">
+                                <span class="card-title">Energy & Carbon Footprint</span>
+                                <div class="card-icon emerald-bg">🌱</div>
+                            </div>
+                            <div class="card-dual-metrics">
+                                <div class="metric-block">
+                                    <div class="card-value" id="val-energy-wh">-</div>
+                                    <span class="metric-label">Energy Consumed</span>
+                                </div>
+                                <div class="metric-block">
+                                    <div class="card-value" id="val-carbon-g">-</div>
+                                    <span class="metric-label">Carbon Emitted</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="card-sub" id="val-token-cost-comparison">Token rate comparison: -</div>
+                        <div class="card-sub font-mono" id="val-grid-intensity-sub">Grid: - g CO2/kWh</div>
                     </div>
-                </div>
 
-                <!-- Energy Consumption Card -->
-                <div class="stat-card">
-                    <div class="card-top">
-                        <div class="card-header">
-                            <span class="card-title">Energy Consumption</span>
-                            <div class="card-icon orange-bg">🔌</div>
+                    <!-- Estimated Cost Savings Card -->
+                    <div class="stat-card">
+                        <div class="card-top">
+                            <div class="card-header">
+                                <span class="card-title" id="val-savings-title">Estimated Cost Savings</span>
+                                <div class="card-icon purple-bg">📈</div>
+                            </div>
+                            <div class="card-value text-emerald" id="val-savings">-</div>
                         </div>
-                        <div class="card-value" id="val-energy-kwh">- kWh</div>
-                    </div>
-                    <div class="card-bottom">
-                        <div class="card-sub font-mono" id="val-energy-joules">- Joules</div>
-                        <div class="card-sub" id="val-energy-accounting">Accounting method: -</div>
+                        <div class="card-sub" id="val-savings-sub">vs. standard token pricing</div>
                     </div>
                 </div>
 
-                <!-- Carbon Offset Card -->
-                <div class="stat-card">
-                    <div class="card-top">
-                        <div class="card-header">
-                            <span class="card-title">Carbon Footprint</span>
-                            <div class="card-icon emerald-bg">🌱</div>
+                <!-- Charts Section -->
+                <div class="charts-grid" id="charts-container">
+                    <div class="chart-card">
+                        <div class="card-header-flex">
+                            <h3>Cost Comparison Over Time</h3>
+                            <span class="legend-chip terracotta-dot">Actual Cost vs Token-Only Equivalent</span>
                         </div>
-                        <div class="card-value text-emerald" id="val-carbon-g">- g CO₂</div>
+                        <div class="chart-container">
+                            <canvas id="costSavingsChart"></canvas>
+                        </div>
                     </div>
-                    <div class="card-bottom">
-                        <div class="card-sub" id="val-carbon-intensity">- g CO₂/kWh grid average</div>
-                        <div class="card-sub text-emerald" id="val-carbon-equivalent">-</div>
+
+                    <div class="chart-card">
+                        <div class="card-header-flex">
+                            <h3>Cache Performance & Efficiency</h3>
+                            <span class="legend-chip">Cache Hit Rate % Over Time</span>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="cachePerformanceChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="chart-card full-width">
+                        <div class="card-header-flex">
+                            <h3>Cost Efficiency Trends</h3>
+                            <span class="legend-chip">Cost / Million Tokens & Cost / Request</span>
+                        </div>
+                        <div class="chart-container" style="height: 280px;">
+                            <canvas id="costEfficiencyChart"></canvas>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Charts Section -->
-            <div class="charts-grid">
-                <!-- Cost & Savings Progression -->
-                <div class="chart-card">
-                    <h3 id="chart-cost-title">Cost & Est. Savings Progression</h3>
-                    <div class="chart-container">
-                        <canvas id="costSavingsChart"></canvas>
+                <!-- Model Performance Breakdown Section -->
+                <section class="breakdown-section" id="model-breakdown-container">
+                    <div class="card-header-flex" style="margin-bottom: 1.25rem;">
+                        <div>
+                            <h2>Model Performance Breakdown</h2>
+                            <p class="section-subtitle">Comparative usage metrics, costs, and token efficiency grouped by model.</p>
+                        </div>
                     </div>
-                </div>
-
-                <!-- Token & Cache Efficiency -->
-                <div class="chart-card">
-                    <h3>Token Cache Performance</h3>
-                    <div class="chart-container">
-                        <canvas id="cachePerformanceChart"></canvas>
-                    </div>
-                </div>
-
-                <!-- Cost Efficiency Chart -->
-                <div class="chart-card full-width-md">
-                    <h3 id="chart-efficiency-title">Cost per Million Tokens vs. Cost per Request</h3>
-                    <div class="chart-container">
-                        <canvas id="costEfficiencyChart"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Details Section (Model and Tiers) -->
-            <div class="details-grid">
-                <!-- Model Breakdown Card -->
-                <div class="detail-card">
-                    <h3>Model Breakdown</h3>
                     <div class="table-container">
-                        <table class="logs-table" id="model-performance-table">
+                        <table class="logs-table model-breakdown-table" id="model-breakdown-table">
                             <thead>
                                 <tr>
-                                    <th data-sort="model" class="sortable">Model <span class="sort-indicator"></span></th>
-                                    <th data-sort="requests" class="sortable sorted-desc">Requests <span class="sort-indicator">↓</span></th>
-                                    <th data-sort="tokens" class="sortable">Tokens <span class="sort-indicator"></span></th>
-                                    <th data-sort="cache_rate" class="sortable">Cache Rate <span class="sort-indicator"></span></th>
-                                    <th>Token Breakdown</th>
-                                    <th data-sort="energy_cost" class="sortable">Energy Cost <span class="sort-indicator"></span></th>
-                                    <th>Unit Costs</th>
-                                    <th>Token Comp. Details</th>
-                                    <th data-sort="savings" class="sortable">Est. Savings <span class="sort-indicator"></span></th>
+                                    <th>Model Name</th>
+                                    <th style="text-align: right;">Requests</th>
+                                    <th style="text-align: right;">Total Tokens</th>
+                                    <th style="text-align: right;">Cache Rate</th>
+                                    <th style="text-align: right;">Calculated Cost</th>
+                                    <th style="text-align: right;">Compare Cost</th>
+                                    <th style="text-align: right;">Savings</th>
+                                    <th style="text-align: right;">Energy (Wh)</th>
                                 </tr>
                             </thead>
                             <tbody id="model-performance-tbody">
@@ -405,44 +413,130 @@
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </section>
+
+                <!-- Granular Logs Section -->
+                <section class="logs-section" id="logs-container">
+                    <div class="logs-header">
+                        <h2 id="table-logs-title">Granular Logs</h2>
+                        <div class="logs-actions">
+                            <input type="text" id="log-search-input" placeholder="Search by date..." class="search-input">
+                            <button class="btn btn-secondary btn-sm" id="btn-export-csv-subset">
+                                Export Current View (CSV)
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="table-container">
+                        <table class="logs-table" id="logs-table">
+                            <thead>
+                                <tr>
+                                    <th data-sort="date" class="sortable sorted-desc">Time <span class="sort-indicator">↓</span></th>
+                                    <th data-sort="requests" class="sortable">Requests <span class="sort-indicator"></span></th>
+                                    <th data-sort="tokens" class="sortable">Tokens <span class="sort-indicator"></span></th>
+                                    <th data-sort="cached" class="sortable">Cached Tokens <span class="sort-indicator"></span></th>
+                                    <th data-sort="cache_rate" class="sortable">Cache Hit Rate <span class="sort-indicator"></span></th>
+                                    <th data-sort="energy_cost" class="sortable">Energy Cost <span class="sort-indicator"></span></th>
+                                    <th data-sort="token_cost" class="sortable">Token Cost <span class="sort-indicator"></span></th>
+                                    <th data-sort="savings" class="sortable">Est. Savings <span class="sort-indicator"></span></th>
+                                    <th data-sort="energy" class="sortable">Energy (Wh) <span class="sort-indicator"></span></th>
+                                    <th data-sort="carbon" class="sortable">Carbon (g) <span class="sort-indicator"></span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs-table-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
             </div>
 
-            <!-- Granular Logs Section -->
-            <div class="logs-section">
-                <div class="logs-header">
-                    <h2 id="table-logs-title">Granular Logs</h2>
-                    <div class="logs-actions">
-                        <input type="text" id="log-search-input" placeholder="Search by date..." class="search-input">
-                        <button class="btn btn-secondary btn-sm" id="btn-export-csv-subset">
-                            Export Current View (CSV)
-                        </button>
+            <!-- 3. ENERGY INSIGHTS PANEL (BELOW THE OTHER SECTIONS) -->
+            <section class="energy-insights-section" style="margin-top: 2rem;">
+                <div class="energy-insights-top-bar">
+                    <div class="energy-insights-header-flex">
+                        <div class="energy-insights-title-area">
+                            <h2>⚡ Unofficial Energy Insights</h2>
+                            <p class="section-subtitle" style="margin-top: 0.25rem;">Live energy pricing telemetry & weighted consumption benchmark by prompt request size, pulled directly from <a href="https://portal.neuralwatt.com/energy-pricing" target="_blank" rel="noopener">portal.neuralwatt.com/energy-pricing</a>.</p>
+                        </div>
+                        <div class="energy-insights-action-area">
+                            <button type="button" class="btn btn-fetch-prominent" id="btn-fetch-live-energy-top" title="Fetch live telemetry from portal.neuralwatt.com">
+                                <span class="live-dot">●</span> ⚡ Fetch Live Energy Data
+                            </button>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="table-container">
-                    <table class="logs-table" id="logs-table">
-                        <thead>
-                            <tr>
-                                <th data-sort="date" class="sortable sorted-desc">Time <span class="sort-indicator">↓</span></th>
-                                <th data-sort="requests" class="sortable">Requests <span class="sort-indicator"></span></th>
-                                <th data-sort="tokens" class="sortable">Tokens <span class="sort-indicator"></span></th>
-                                <th data-sort="cached" class="sortable">Cached Tokens <span class="sort-indicator"></span></th>
-                                <th data-sort="cache_rate" class="sortable">Cache Hit Rate <span class="sort-indicator"></span></th>
-                                <th data-sort="energy_cost" class="sortable">Energy Cost <span class="sort-indicator"></span></th>
-                                <th data-sort="token_cost" class="sortable">Token Cost <span class="sort-indicator"></span></th>
-                                <th data-sort="savings" class="sortable">Est. Savings <span class="sort-indicator"></span></th>
-                                <th data-sort="energy" class="sortable">Energy (Wh) <span class="sort-indicator"></span></th>
-                                <th data-sort="carbon" class="sortable">Carbon (g) <span class="sort-indicator"></span></th>
-                            </tr>
-                        </thead>
-                        <tbody id="logs-table-body">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
+
+                <!-- Energy Stat Summary Cards -->
+                <div class="energy-stats-grid">
+                    <div class="energy-stat-card">
+                        <div class="stat-header">Weighted Energy / Req</div>
+                        <div class="stat-value" id="val-energy-weighted-avg">- mWh</div>
+                        <div class="stat-sub" id="val-energy-weighted-sub">Telemetry weighted baseline</div>
+                    </div>
+                    <div class="energy-stat-card">
+                        <div class="stat-header">User Request Profile</div>
+                        <div class="stat-value" id="val-user-req-size">- tokens</div>
+                        <div class="stat-sub" id="val-user-req-band">Typical band: -</div>
+                    </div>
+                    <div class="energy-stat-card">
+                        <div class="stat-header">User Energy Consumption</div>
+                        <div class="stat-value" id="val-user-mwh-req">- mWh</div>
+                        <div class="stat-sub" id="val-user-mwh-vs-benchmark">vs benchmark avg</div>
+                    </div>
+                    <div class="energy-stat-card">
+                        <div class="stat-header">Most Energy-Efficient Model</div>
+                        <div class="stat-value" id="val-most-efficient-model">-</div>
+                        <div class="stat-sub" id="val-most-efficient-mwh">Lowest weighted energy/req</div>
+                    </div>
                 </div>
-            </div>
-            
+
+                <!-- Energy Insights Grid / Split Layout -->
+                <div class="energy-insights-grid">
+                    <!-- Energy Table Card -->
+                    <div class="energy-card full-width">
+                        <div class="card-header-flex">
+                            <h3>Average Energy per Request, by Model & Prompt Request Size</h3>
+                            <div class="table-legend">
+                                <span id="energy-status-badge" class="legend-chip">⚡ Manual Sync Required</span>
+                                <button type="button" class="btn-refresh-energy" id="btn-refresh-energy" title="Fetch live telemetry from portal.neuralwatt.com">↻ Fetch Live Data</button>
+                                <span class="legend-chip terracotta-dot">★ Active Model</span>
+                                <span class="legend-chip">Hover cells for cache-hit telemetry</span>
+                            </div>
+                        </div>
+                        <div class="table-container">
+                            <table class="logs-table energy-table" id="energy-benchmark-table">
+                                <thead>
+                                    <tr>
+                                        <th data-sort="model" class="sortable sorted-asc">Model <span class="sort-indicator">↑</span></th>
+                                        <th data-sort="weighted" class="sortable">Weighted Energy/Req <span class="sort-indicator"></span></th>
+                                        <th data-sort="0–256" class="sortable">0–256</th>
+                                        <th data-sort="256–1k" class="sortable">256–1k</th>
+                                        <th data-sort="1k–4k" class="sortable">1k–4k</th>
+                                        <th data-sort="4k–16k" class="sortable">4k–16k</th>
+                                        <th data-sort="16k–64k" class="sortable">16k–64k</th>
+                                        <th data-sort="64k–256k" class="sortable">64k–256k</th>
+                                        <th data-sort="256k–1M" class="sortable">256k–1M</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="energy-benchmark-tbody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Weighted Energy Visual Chart -->
+                    <div class="energy-card full-width">
+                        <h3>Weighted Energy Use by Request Size (mWh / Request)</h3>
+                        <div class="chart-container" style="height: 320px;">
+                            <canvas id="energyInsightsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
         </main>
         
         <footer class="app-footer">
