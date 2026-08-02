@@ -86,9 +86,12 @@
                         <!-- Left Column: File Drop & Import -->
                         <div class="splash-col-main">
                             <div class="upload-card">
-                                <div class="upload-icon">⚡</div>
-                                <h2>Import Usage JSON Exports</h2>
-                                <p>Drag & drop single-model Neuralwatt JSON exports here to analyze costs, token breakdown, energy & carbon footprint, and savings.</p>
+                                <div class="upload-card-header">
+                                    <div class="upload-card-header-text">
+                                        <h2>Import Usage JSON Exports</h2>
+                                        <p>Drag & drop single-model Neuralwatt JSON exports here to analyze costs, token breakdown, energy & carbon footprint, and savings.</p>
+                                    </div>
+                                </div>
 
                                 <div class="drop-zone" id="drop-zone">
                                     <svg class="drop-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -111,7 +114,6 @@
                         <div class="splash-col-side">
                             <div class="export-methods-card">
                                 <h4>How to Get Your Data</h4>
-                                <p class="directions-subtext">Choose your preferred export method:</p>
                                 
                                 <!-- 1-Click Bookmarklet Card -->
                                 <div class="export-method-card bookmarklet-card">
@@ -226,6 +228,8 @@
                                 <option value="auto-match" selected>Auto-Match (OpenRouter Live)</option>
                                 <option value="auto-match-neuralwatt">Auto-Match (Neuralwatt Posted Pricing)</option>
                                 <option value="auto-match-provider">Auto-Match (Official Provider Pricing)</option>
+                                <option value="deepinfra">DeepInfra (DeepSeek V4 Flash)</option>
+                                <option value="novita">Novita AI (DeepSeek V4 Flash)</option>
                                 <option value="custom-rates">Custom Rates ($/Mtok)...</option>
                             </select>
                         </div>
@@ -261,7 +265,7 @@
                 </section>
                 
                 <!-- Summary Stats Cards -->
-                <div class="stats-grid" id="stats-container">
+                <div class="stats-grid">
                     <!-- Requests & Tokens Card -->
                     <div class="stat-card">
                         <div class="card-top">
@@ -304,116 +308,122 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="card-sub text-green font-mono" id="val-cache-rate">-</div>
-                    </div>
-
-                    <!-- Total Cost Card -->
-                    <div class="stat-card">
-                        <div class="card-top">
-                            <div class="card-header">
-                                <span class="card-title">Total Cost (Energy-Based)</span>
-                                <div class="card-icon orange-bg">💰</div>
+                        <div class="card-bottom">
+                            <div class="card-progress-container">
+                                <div class="progress-bar-label">
+                                    <span>Cache Hit Rate</span>
+                                    <span id="val-cache-percent" class="font-mono font-semibold text-green">-</span>
+                                </div>
+                                <div class="progress-bar-bg">
+                                    <div class="progress-bar-fill green-bar" id="bar-cache-fill" style="width: 0%"></div>
+                                </div>
                             </div>
-                            <div class="card-value text-terracotta" id="val-cost-total">-</div>
                         </div>
-                        <div class="card-sub" id="val-cost-sub">Energy-based pricing</div>
                     </div>
 
-                    <!-- Energy & Carbon Footprint Card -->
+                    <!-- Costs & Savings Card -->
+                    <div class="stat-card highlighted">
+                        <div class="card-top">
+                            <div class="card-header">
+                                <span class="card-title">Cost & Estimated Savings</span>
+                                <div class="card-icon terracotta-bg">💰</div>
+                            </div>
+                            <div class="card-value" id="val-energy-cost">-</div>
+                        </div>
+                        <div class="card-bottom">
+                            <div class="savings-container">
+                                <div class="savings-amount" id="val-savings-amount">Saved -</div>
+                                <div class="savings-badge" id="val-savings-pct">-%</div>
+                            </div>
+                            <div class="card-sub" id="val-token-cost-comparison">Token rate comparison: -</div>
+                        </div>
+                    </div>
+
+                    <!-- Energy Consumption Card -->
                     <div class="stat-card">
                         <div class="card-top">
                             <div class="card-header">
-                                <span class="card-title">Energy & Carbon Footprint</span>
+                                <span class="card-title">Energy Consumption</span>
+                                <div class="card-icon orange-bg">🔌</div>
+                            </div>
+                            <div class="card-value" id="val-energy-kwh">- kWh</div>
+                        </div>
+                        <div class="card-bottom">
+                            <div class="card-sub font-mono" id="val-energy-joules">- Joules</div>
+                            <div class="card-sub" id="val-energy-accounting">Accounting method: -</div>
+                        </div>
+                    </div>
+
+                    <!-- Carbon Offset Card -->
+                    <div class="stat-card">
+                        <div class="card-top">
+                            <div class="card-header">
+                                <span class="card-title">Carbon Footprint</span>
                                 <div class="card-icon emerald-bg">🌱</div>
                             </div>
-                            <div class="card-dual-metrics">
-                                <div class="metric-block">
-                                    <div class="card-value" id="val-energy-wh">-</div>
-                                    <span class="metric-label">Energy Consumed</span>
-                                </div>
-                                <div class="metric-block">
-                                    <div class="card-value" id="val-carbon-g">-</div>
-                                    <span class="metric-label">Carbon Emitted</span>
-                                </div>
-                            </div>
+                            <div class="card-value text-emerald" id="val-carbon-g">- g CO₂</div>
                         </div>
-                        <div class="card-sub font-mono" id="val-grid-intensity-sub">Grid: - g CO2/kWh</div>
-                    </div>
-
-                    <!-- Estimated Cost Savings Card -->
-                    <div class="stat-card">
-                        <div class="card-top">
-                            <div class="card-header">
-                                <span class="card-title" id="val-savings-title">Estimated Cost Savings</span>
-                                <div class="card-icon purple-bg">📈</div>
-                            </div>
-                            <div class="card-value text-emerald" id="val-savings">-</div>
+                        <div class="card-bottom">
+                            <div class="card-sub" id="val-carbon-intensity">- g CO₂/kWh grid average</div>
+                            <div class="card-sub text-emerald" id="val-carbon-equivalent">-</div>
                         </div>
-                        <div class="card-sub" id="val-savings-sub">vs. standard token pricing</div>
                     </div>
                 </div>
 
                 <!-- Charts Section -->
-                <div class="charts-grid" id="charts-container">
+                <div class="charts-grid">
+                    <!-- Cost & Savings Progression -->
                     <div class="chart-card">
-                        <div class="card-header-flex">
-                            <h3>Cost Comparison Over Time</h3>
-                            <span class="legend-chip terracotta-dot">Actual Cost vs Token-Only Equivalent</span>
-                        </div>
+                        <h3 id="chart-cost-title">Cost & Est. Savings Progression</h3>
                         <div class="chart-container">
                             <canvas id="costSavingsChart"></canvas>
                         </div>
                     </div>
 
+                    <!-- Token & Cache Efficiency -->
                     <div class="chart-card">
-                        <div class="card-header-flex">
-                            <h3>Cache Performance & Efficiency</h3>
-                            <span class="legend-chip">Cache Hit Rate % Over Time</span>
-                        </div>
+                        <h3>Token Cache Performance</h3>
                         <div class="chart-container">
                             <canvas id="cachePerformanceChart"></canvas>
                         </div>
                     </div>
 
-                    <div class="chart-card full-width">
-                        <div class="card-header-flex">
-                            <h3>Cost Efficiency Trends</h3>
-                            <span class="legend-chip">Cost / Million Tokens & Cost / Request</span>
-                        </div>
-                        <div class="chart-container" style="height: 280px;">
+                    <!-- Cost Efficiency Chart -->
+                    <div class="chart-card full-width-md">
+                        <h3 id="chart-efficiency-title">Cost per Million Tokens vs. Cost per Request</h3>
+                        <div class="chart-container">
                             <canvas id="costEfficiencyChart"></canvas>
                         </div>
                     </div>
                 </div>
 
-                <!-- Model Performance Breakdown Section -->
-                <section class="breakdown-section" id="model-breakdown-container">
-                    <div class="card-header-flex" style="margin-bottom: 1.25rem;">
-                        <div>
-                            <h2>Model Performance Breakdown</h2>
-                            <p class="section-subtitle">Comparative usage metrics, costs, and token efficiency grouped by model.</p>
+                <!-- Details Section (Model and Tiers) -->
+                <div class="details-grid">
+                    <!-- Model Breakdown Card -->
+                    <div class="detail-card">
+                        <h3>Model Breakdown</h3>
+                        <div class="table-container">
+                            <table class="logs-table" id="model-performance-table">
+                                <thead>
+                                    <tr>
+                                        <th data-sort="model" class="sortable">Model <span class="sort-indicator"></span></th>
+                                        <th data-sort="requests" class="sortable sorted-desc">Requests <span class="sort-indicator">↓</span></th>
+                                        <th data-sort="tokens" class="sortable">Tokens <span class="sort-indicator"></span></th>
+                                        <th data-sort="cache_rate" class="sortable">Cache Rate <span class="sort-indicator"></span></th>
+                                        <th>Token Breakdown</th>
+                                        <th data-sort="energy_cost" class="sortable">Energy Cost <span class="sort-indicator"></span></th>
+                                        <th>Unit Costs</th>
+                                        <th>Token Comp. Details</th>
+                                        <th data-sort="savings" class="sortable">Est. Savings <span class="sort-indicator"></span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="model-performance-tbody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
                         </div>
                     </div>
-                    <div class="table-container">
-                        <table class="logs-table model-breakdown-table" id="model-breakdown-table">
-                            <thead>
-                                <tr>
-                                    <th>Model Name</th>
-                                    <th style="text-align: right;">Requests</th>
-                                    <th style="text-align: right;">Total Tokens</th>
-                                    <th style="text-align: right;">Cache Rate</th>
-                                    <th style="text-align: right;">Calculated Cost</th>
-                                    <th style="text-align: right;">Compare Cost</th>
-                                    <th style="text-align: right;">Savings</th>
-                                    <th style="text-align: right;">Energy (Wh)</th>
-                                </tr>
-                            </thead>
-                            <tbody id="model-performance-tbody">
-                                <!-- Populated by JS -->
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
+                </div>
 
                 <!-- Granular Logs Section -->
                 <section class="logs-section" id="logs-container">

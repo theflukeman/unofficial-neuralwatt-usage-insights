@@ -144,7 +144,25 @@ const PROVIDER_MODEL_PRICING = {
     'qwen3.5-397b':       { provider: 'Alibaba Cloud (Qwen)', prompt: 0.60, cache: 0.15, completion: 3.60 },
     'qwen3.5-397b-fast':  { provider: 'Alibaba Cloud (Qwen)', prompt: 0.60, cache: 0.15, completion: 3.60 },
     'qwen3.6-35b':        { provider: 'Alibaba Cloud (Qwen)', prompt: 0.29, cache: 0.07, completion: 1.15 },
-    'qwen3.6-35b-fast':   { provider: 'Alibaba Cloud (Qwen)', prompt: 0.29, cache: 0.07, completion: 1.15 }
+    'qwen3.6-35b-fast':   { provider: 'Alibaba Cloud (Qwen)', prompt: 0.29, cache: 0.07, completion: 1.15 },
+    'deepseek-v4-flash':  { provider: 'DeepSeek', prompt: 0.14, cache: 0.0028, completion: 0.28 }
+};
+
+// Additional third-party hosting providers for DeepSeek V4 Flash.
+// Fixed $/Mtok rates; applied to any model whose name fuzzy-matches
+// 'deepseek-v4-flash'. Used when the user selects these from the
+// "Token Compare Rate" dropdown.
+const THIRD_PARTY_PROVIDER_RATES = {
+    'deepinfra': {
+        label: 'DeepInfra',
+        match: 'deepseek-v4-flash',
+        prompt: 0.09, cache: 0.018, completion: 0.18
+    },
+    'novita': {
+        label: 'Novita AI',
+        match: 'deepseek-v4-flash',
+        prompt: 0.14, cache: 0.028, completion: 0.28
+    }
 };
 
 // Live Neuralwatt portal energy consumption telemetry (mWh / req & % of reqs by prompt size band)
@@ -595,7 +613,7 @@ if (energyBenchmarkTableHeaders) {
 }
 
 
-// MULTI-FILE UPLOADER HANDLER (SUPPORTS SINGLE AND MULTI-MODEL EXPORTS)
+// MULTI-FILE UPLOADER HANDLER (ENFORCES SINGLE-MODEL FILES)
 function handleFilesSelection(filesList) {
     const files = Array.from(filesList);
     let errors = [];
@@ -612,49 +630,27 @@ function handleFilesSelection(filesList) {
                 try {
                     const data = JSON.parse(e.target.result);
                     if (validateUsageData(data)) {
-                        // Normalize daily/hourly/rows
-                        if (!data.daily && data.hourly) data.daily = data.hourly;
-                        if (!data.daily && data.rows) data.daily = data.rows;
-
-                        let byModel = Array.isArray(data.by_model) ? data.by_model : [];
-                        if (byModel.length === 0 && data.model) {
-                            byModel = [{ model: data.model, ...data.totals }];
-                            data.by_model = byModel;
-                        }
-
-                        if (byModel.length === 0) {
-                            errors.push(`${file.name}: Could not identify model usage in JSON export.`);
+                        if (!data.by_model || data.by_model.length !== 1) {
+                            errors.push(`${file.name}: Must contain data for exactly ONE model. Found ${data.by_model ? data.by_model.length : 0}. Please export single-model files from the portal.`);
                             return resolve();
                         }
 
-                        if (byModel.length === 1) {
-                            const modelName = byModel[0].model;
-                            loadedFiles = loadedFiles.filter(f => f.modelName !== modelName);
-                            loadedFiles.push({
-                                fileName: file.name,
-                                modelName: modelName,
-                                data: data
-                            });
-                            loadedCount++;
-                        } else {
-                            // Multi-model file: import model entries
-                            byModel.forEach(m => {
-                                const modelName = m.model;
-                                const singleData = {
-                                    ...data,
-                                    totals: m.requests !== undefined ? { ...data.totals, ...m } : data.totals,
-                                    by_model: [m],
-                                    available_models: [modelName]
-                                };
-                                loadedFiles = loadedFiles.filter(f => f.modelName !== modelName);
-                                loadedFiles.push({
-                                    fileName: `${file.name} (${modelName})`,
-                                    modelName: modelName,
-                                    data: singleData
-                                });
-                                loadedCount++;
-                            });
+                        const modelName = data.by_model[0].model;
+
+                        // Overwrite if same model is re-uploaded
+                        loadedFiles = loadedFiles.filter(f => f.modelName !== modelName);
+
+                        // Normalize daily/hourly rows
+                        if (!data.daily && data.hourly) {
+                            data.daily = data.hourly;
                         }
+
+                        loadedFiles.push({
+                            fileName: file.name,
+                            modelName: modelName,
+                            data: data
+                        });
+                        loadedCount++;
                     } else {
                         errors.push(`${file.name}: Invalid Neuralwatt usage JSON format.`);
                     }
@@ -684,7 +680,7 @@ function handleFilesSelection(filesList) {
                 thirdPartyProviderSelect.value = 'auto-match';
             }
 
-            if (typeof liveEnergyPricingData !== 'undefined' && liveEnergyPricingData.length === 0) {
+            if (!liveEnergyPricingLoaded && !liveEnergyPricingFetching) {
                 fetchLiveEnergyPricing();
             }
 
@@ -868,8 +864,10 @@ function compileMergedData() {
     
     const granularity = rawData.granularity || 'daily';
     const label = granularity.charAt(0).toUpperCase() + granularity.slice(1);
-    document.getElementById('chart-cost-title').textContent = `Cost & Est. Savings Progression (${label})`;
-    document.getElementById('chart-efficiency-title').textContent = `Cost per Million Tokens vs. Cost per Request (${label})`;
+    const chartCostTitle = document.getElementById('chart-cost-title');
+    if (chartCostTitle) chartCostTitle.textContent = `Cost & Est. Savings Progression (${label})`;
+    const chartEfficiencyTitle = document.getElementById('chart-efficiency-title');
+    if (chartEfficiencyTitle) chartEfficiencyTitle.textContent = `Cost per Million Tokens vs. Cost per Request (${label})`;
     document.getElementById('table-logs-title').textContent = `${label} Granular Logs`;
     document.getElementById('log-search-input').placeholder = `Search by date...`;
     
@@ -1100,6 +1098,8 @@ function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionT
         activeRateModelId = 'neuralwatt-pricing';
     } else if (thirdPartyCompareRate === 'auto-match-provider') {
         activeRateModelId = 'provider-pricing';
+    } else if (THIRD_PARTY_PROVIDER_RATES[thirdPartyCompareRate]) {
+        activeRateModelId = thirdPartyCompareRate;
     }
 
     if (activeRateModelId === 'custom-rates') {
@@ -1139,6 +1139,20 @@ function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionT
     } else if (activeRateModelId === 'json-token-cost') {
         // No heuristics: return standard token cost directly from the JSON
         compareCost = originalTokenCost;
+    } else if (THIRD_PARTY_PROVIDER_RATES[activeRateModelId]) {
+        const tpRate = THIRD_PARTY_PROVIDER_RATES[activeRateModelId];
+        // Apply only if the model name fuzzy-matches the rate's target model
+        if (modelName && modelName.toLowerCase().includes(tpRate.match)) {
+            const promptPrice = tpRate.prompt / TOKENS_PER_MILLION;
+            const promptCachedPrice = tpRate.cache / TOKENS_PER_MILLION;
+            const completionPrice = tpRate.completion / TOKENS_PER_MILLION;
+
+            const promptCost = (uncachedPrompt * promptPrice) + (cachedTokens * promptCachedPrice);
+            const completionCost = completionTokens * completionPrice;
+            compareCost = promptCost + completionCost;
+        } else {
+            compareCost = originalTokenCost;
+        }
     } else {
         // Must be a dynamically loaded OpenRouter model!
         const orModel = openRouterModels.find(m => m.id === activeRateModelId);
@@ -1594,6 +1608,8 @@ function renderSummaryStats() {
         rateLabel = "Neuralwatt Official Pricing";
     } else if (thirdPartyCompareRate === 'auto-match-provider') {
         rateLabel = "Official Provider Pricing";
+    } else if (THIRD_PARTY_PROVIDER_RATES[thirdPartyCompareRate]) {
+        rateLabel = `${THIRD_PARTY_PROVIDER_RATES[thirdPartyCompareRate].label} (DeepSeek V4 Flash)`;
     } else if (thirdPartyCompareRate === 'custom-rates') {
         rateLabel = "Custom rates ($/Mtok)";
     } else {
@@ -1985,6 +2001,8 @@ function renderModelBreakdown() {
             activeRateModelId = 'neuralwatt-pricing';
         } else if (thirdPartyCompareRate === 'auto-match-provider') {
             activeRateModelId = 'provider-pricing';
+        } else if (THIRD_PARTY_PROVIDER_RATES[thirdPartyCompareRate]) {
+            activeRateModelId = thirdPartyCompareRate;
         }
 
         let compHeading = 'OpenRouter Match:';
@@ -2015,6 +2033,11 @@ function renderModelBreakdown() {
             const prP = findProviderPricing(m.model);
             compLabel = prP && prP.provider ? prP.provider : 'Official Provider';
             compBreakdown = prP ? formatRatesBreakdown(prP.prompt, prP.cache, prP.completion) : '';
+        } else if (THIRD_PARTY_PROVIDER_RATES[activeRateModelId]) {
+            const tpRate = THIRD_PARTY_PROVIDER_RATES[activeRateModelId];
+            compHeading = `${tpRate.label}:`;
+            compLabel = `${tpRate.label} (DeepSeek V4 Flash)`;
+            compBreakdown = formatRatesBreakdown(tpRate.prompt, tpRate.cache, tpRate.completion);
         } else if (activeRateModelId === 'json-token-cost') {
             compHeading = 'JSON Token Rate:';
             compLabel = 'JSON Token Cost';
@@ -2638,7 +2661,46 @@ function renderEnergyInsightsChart(data, activeModelEntry) {
 }
 
 // DYNAMICALLY FETCH LIVE ENERGY PRICING TELEMETRY FROM WEBSITE (STRICT LIVE-ONLY, NO STALE FALLBACK)
+const ENERGY_CACHE_KEY = 'neuralwatt_energy_benchmarks_cache';
+const ENERGY_CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
+
+// Load energy benchmarks from localStorage cache. Returns true if cache was
+// fresh (within TTL) and benchmarks were restored. Also renders the energy
+// insights panel and updates the status badge when successful.
+function loadEnergyCache() {
+    try {
+        const cached = localStorage.getItem(ENERGY_CACHE_KEY);
+        if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed && Array.isArray(parsed.benchmarks) && parsed.timestamp && (Date.now() - parsed.timestamp < ENERGY_CACHE_TTL_MS)) {
+                NEURALWATT_ENERGY_BENCHMARKS.length = 0;
+                NEURALWATT_ENERGY_BENCHMARKS.push(...parsed.benchmarks);
+                liveEnergyPricingLoaded = true;
+                liveEnergyPricingFetching = false;
+                liveEnergyPricingError = null;
+                const energyStatusBadge = document.getElementById('energy-status-badge');
+                if (energyStatusBadge) {
+                    energyStatusBadge.className = 'legend-chip live-sync-chip';
+                    const cacheTime = new Date(parsed.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    energyStatusBadge.innerHTML = `<span class="live-dot">●</span> Live Sync (cached · updated ${cacheTime})`;
+                }
+                renderEnergyInsights();
+                return true;
+            }
+        }
+    } catch (cacheErr) {
+        // localStorage may be unavailable (private mode, quota); fall through
+    }
+    return false;
+}
+
+// Show cached energy data immediately on page load, before any JSON import
+loadEnergyCache();
+
 async function fetchLiveEnergyPricing() {
+    // Check browser cache first — avoids redundant network fetches within TTL
+    if (loadEnergyCache()) return;
+
     const energyStatusBadge = document.getElementById('energy-status-badge');
     const updateBadge = (status, timeStr = '') => {
         if (!energyStatusBadge) return;
@@ -2781,6 +2843,15 @@ async function fetchLiveEnergyPricing() {
                 if (success) {
                     liveEnergyPricingLoaded = true;
                     liveEnergyPricingFetching = false;
+                    // Cache the parsed benchmarks for next load
+                    try {
+                        localStorage.setItem(ENERGY_CACHE_KEY, JSON.stringify({
+                            benchmarks: NEURALWATT_ENERGY_BENCHMARKS,
+                            timestamp: Date.now()
+                        }));
+                    } catch (cacheErr) {
+                        // localStorage write may fail (quota, private mode); non-fatal
+                    }
                     updateBadge('live', new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
                     renderEnergyInsights();
                     return;

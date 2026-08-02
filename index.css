@@ -73,6 +73,12 @@ h1, h2, h3, h4 {
     font-weight: 600;
 }
 
+h1 { font-size: 1.25rem; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1.05rem; }
+h4 { font-size: 1rem; }
+h5 { font-size: 0.9rem; font-family: var(--font-heading); font-weight: 600; }
+
 code, .font-mono {
     font-family: var(--font-mono);
 }
@@ -359,12 +365,41 @@ code, .font-mono {
     box-shadow: var(--card-shadow);
     border-radius: 16px;
     padding: 2.25rem;
-    text-align: center;
+    text-align: left;
     height: 100%;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
+    gap: 1rem;
+}
+
+.upload-card .upload-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.upload-card .upload-card-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.upload-card .upload-icon {
+    font-size: 2.5rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.upload-card h2 {
+    margin: 0;
+}
+
+.upload-card p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.5;
 }
 
 .export-methods-card {
@@ -379,7 +414,7 @@ code, .font-mono {
 }
 
 .export-methods-card h4 {
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 700;
     margin-bottom: 0.25rem;
     color: var(--text-primary);
@@ -398,7 +433,7 @@ code, .font-mono {
 }
 
 .manual-card h5 {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 600;
     margin-bottom: 0.5rem;
     color: var(--text-primary);
@@ -432,7 +467,7 @@ code, .font-mono {
 }
 
 .directions-list h4 {
-    font-size: 1.1rem;
+    font-size: 1rem;
     margin-bottom: 0.25rem;
     color: var(--text-primary);
 }
@@ -490,7 +525,7 @@ code, .font-mono {
 }
 
 .export-method-card h5 {
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 600;
     margin-bottom: 0.4rem;
     color: var(--text-primary);
@@ -638,7 +673,6 @@ code, .font-mono {
     font-size: 0.75rem;
     color: var(--text-secondary);
     opacity: 0.8;
-    margin-top: 1.5rem;
     line-height: 1.4;
 }
 
@@ -1077,7 +1111,7 @@ code, .font-mono {
 }
 
 .chart-card h3 {
-    font-size: 1rem;
+    font-size: 1.05rem;
     margin-bottom: 1.25rem;
     color: var(--text-primary);
 }
@@ -1196,7 +1230,7 @@ code, .font-mono {
 }
 
 .logs-header h2 {
-    font-size: 1.15rem;
+    font-size: 1.2rem;
 }
 
 .logs-actions {
@@ -1420,7 +1454,7 @@ code, .font-mono {
     background-color: rgba(253, 252, 247, 0.02);
 }
 .directions-list h4 {
-    font-size: 0.8rem;
+    font-size: 1rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 0.5rem;
@@ -1502,7 +1536,7 @@ a:hover,
 }
 
 .energy-insights-title-area h2 {
-    font-size: 1.35rem;
+    font-size: 1.2rem;
     color: var(--text-primary);
 }
 
@@ -1594,7 +1628,7 @@ a:hover,
 }
 
 .energy-card h3 {
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     color: var(--text-primary);
     margin-bottom: 1rem;
 }
