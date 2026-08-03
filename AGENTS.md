@@ -50,6 +50,20 @@ Static, client-side dashboard for analyzing Neuralwatt usage JSON exports.
 - Live-session persistence uses the versioned `localStorage` key
   `neuralwatt_session_v1` (parsed JSON + filter state). Stale/corrupt payloads are
   silently cleared. Do not rename the key without a migration plan.
+- Energy benchmark data (the "Energy Insights" panel) is served primarily from
+  `data/energy-benchmarks.json`, a repo-hosted mirror of the portal's published
+  band grid, refreshed by the GitHub Action
+  `.github/workflows/sync-energy-benchmarks.yml` (scheduled hourly +
+  `workflow_dispatch`) which runs `scripts/sync-energy-benchmarks.mjs`
+  server-side and commits changes. The app's load order is: localStorage cache →
+  mirror (`data/energy-benchmarks.json`) → direct portal fetch (+ CORS proxies) →
+  built-in fallbacks. Keep the pure parse/validate helpers in sync between
+  `app.js`, `lib/core.js`, and `scripts/sync-energy-benchmarks.mjs` — the sync
+  script must produce exactly the shape `NEURALWATT_ENERGY_BENCHMARKS` consumes
+  (model / id / aliases / bands with band, display, mwh, req_pct, cache_hit_pct).
+  If the portal markup changes, the parser **throws** (do not weaken this into a
+  silent skip); the workflow opens a GitHub issue on failure and the app shows
+  an error suggesting users open an issue.
 
 ## Data model (assumptions to preserve)
 

@@ -85,10 +85,12 @@ Then visit `http://localhost:8000`.
 index.html   # Markup, CDN includes (Chart.js, Google Fonts)
 index.css    # Theming via CSS variables + layout/components
 app.js       # All app logic (file parsing, aggregation, rendering, charts)
-data/        # Editable pricing tables (neuralwatt-pricing.json, provider-pricing.json)
+data/        # Editable pricing tables + energy-benchmarks.json (repo-hosted mirror)
 vendor/      # Vendored Chart.js (offline-capable, with CDN fallback)
 lib/         # Dev-only pure-logic mirrors for unit tests (see AGENTS.md)
 tests/       # Unit tests (node:test, no runtime deps)
+scripts/     # Dev-only sync tooling (energy benchmark mirror, see below)
+.github/     # GitHub Actions workflows (energy benchmark sync)
 ```
 
 > **Note:** `app.js` is a single ~1.5k-line vanilla-JS file. There is no module
@@ -97,6 +99,17 @@ tests/       # Unit tests (node:test, no runtime deps)
 > The pricing tables in `data/` are fetched at load time; if that fetch fails
 > (e.g. opening `index.html` directly via `file://`), the built-in copies in
 > `app.js` are used automatically, so behavior is unchanged.
+>
+> **Live energy data:** the Energy Insights panel loads
+> `data/energy-benchmarks.json`, a repo-hosted mirror of Neuralwatt's published
+> per-model energy benchmarks (average energy per request by prompt-size band,
+> trailing 7 days). The portal sends no CORS headers, so browsers can't fetch it
+> directly (Firefox blocks it); instead a GitHub Action refreshes the mirror on
+> a schedule and commits any changes. If the portal's markup changes and the
+> parser can no longer read it, the sync run fails and opens an issue on GitHub;
+> the app then falls back to the last committed data, then a direct portal
+> fetch, then built-in fallbacks, and shows an error pointing users to report
+> the problem.
 
 ## Tech
 
@@ -114,7 +127,8 @@ and do not affect the static site:
 npm install      # dev tooling (ESLint only; tests use node:test, no deps)
 npm test         # unit tests for lib/ mirrors (escapeHtml, validateUsageData,
                  # getCalculatedCosts, clampFinite, date helpers)
-npm run lint     # ESLint over app.js, lib/, tests/
+npm run lint     # ESLint over app.js, lib/, tests/, scripts/
+node scripts/sync-energy-benchmarks.mjs   # refresh data/energy-benchmarks.json manually
 ```
 
 `lib/` holds pure mirrors of `app.js` logic so tests can import them without a

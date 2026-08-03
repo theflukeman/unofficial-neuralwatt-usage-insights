@@ -1,0 +1,91 @@
+# sync-energy-benchmarks.yml
+#
+# Refreshes data/energy-benchmarks.json — the app's PRIMARY energy-telemetry
+# source. The portal (portal.neuralwatt.com) sends no CORS headers, so browsers
+# cannot fetch it directly; instead this workflow fetches the page server-side
+# (no CORS on the server), parses the band grid, and commits any changes to the
+# repo. The static app then loads the JSON same-origin from GitHub Pages.
+#
+# Notes:
+#  - `schedule` only fires on the default branch and only while GitHub Actions
+#    is enabled for this repository (repo Settings → Actions → General).
+#  - If a run fails (portal markup changed, network hiccup), the workflow
+#    surfaces a failure to the repo owner and the previously committed JSON
+#    remains in place — the app keeps working with slightly stale data.
+#  - Manual refresh: open the Actions tab → "Sync energy benchmarks" →
+#    "Run workflow" (or run `node scripts/sync-energy-benchmarks.mjs` locally).
+
+name: Sync energy benchmarks
+
+on:
+  schedule:
+    # Hourly; arbitrary minute offset to spread load. UTC.
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync-energy-benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fetch and parse energy benchmarks
+        run: node scripts/sync-energy-benchmarks.mjs
+
+      - name: Commit updated benchmarks (if changed)
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- data/energy-benchmarks.json; then
+            echo "::notice::Energy benchmarks unchanged — nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/energy-benchmarks.json
+          git commit -m "chore(data): refresh energy benchmarks"
+          git push
+
+      # The portal page is third-party markup we don't control. If the parser
+      # can no longer read it (or the run fails for another reason), surface a
+      # single open issue so the maintainer (and users hitting the app error
+      # message) know to report / fix it. Dedupes on the issue title.
+      - name: Open issue on sync failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '⚠️ Energy benchmark sync failed — portal markup may have changed';
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            if (issues.some(issue => issue.title === title)) {
+              console.log('An open issue with this title already exists; skipping.');
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: [
+                'The scheduled energy-benchmarks sync workflow failed.',
+                '',
+                'This usually means the portal page markup changed so the parser can no longer read the band grid. The app keeps working with the last committed data until this is fixed.',
+                '',
+                `Workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                'If you hit this in the app, please add details in a comment below.'
+              ].join('\n')
+            });

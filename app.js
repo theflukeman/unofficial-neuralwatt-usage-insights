@@ -3197,7 +3197,8 @@ function renderEnergyInsights() {
     // Handle Fetch Failure / Error State
     if (liveEnergyPricingError || !liveEnergyPricingLoaded || NEURALWATT_ENERGY_BENCHMARKS.length === 0) {
         energyBenchmarkTbody.innerHTML = `<tr><td colspan="9" data-label="Live Energy" style="text-align: center; padding: 2.5rem; color: var(--accent-terracotta); font-weight: 500;">
-            <div style="margin-bottom: 0.75rem;">⚠️ Live energy pricing telemetry could not be fetched from portal.neuralwatt.com.</div>
+            <div style="margin-bottom: 0.75rem;">⚠️ Live energy pricing telemetry could not be loaded.</div>
+            <div style="margin-bottom: 1rem; font-weight: 400; color: var(--text-secondary);">The source is a third-party site we don't control — its format may have changed. If this keeps happening, please <a href="https://github.com/theflukeman/unofficial-neuralwatt-usage-insights/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-terracotta);">open an issue on GitHub</a>.</div>
             <button type="button" class="btn btn-secondary btn-sm" id="btn-retry-live-energy">↻ Retry Fetching Live Telemetry</button>
         </td></tr>`;
         const btnRetry = document.getElementById('btn-retry-live-energy');
@@ -3461,7 +3462,11 @@ function renderEnergyInsightsChart(data, activeModelEntry) {
     });
 }
 
-// DYNAMICALLY FETCH LIVE ENERGY PRICING TELEMETRY FROM WEBSITE (STRICT LIVE-ONLY, NO STALE FALLBACK)
+// LIVE ENERGY BENCHMARK DATA — loaded from the repo-hosted mirror first
+// (data/energy-benchmarks.json, refreshed by the GitHub Actions workflow),
+// then from the portal website directly (which has no CORS headers), with a
+// localStorage cache (20-min TTL) so file:// and offline loads still work.
+const ENERGY_MIRROR_URL = 'data/energy-benchmarks.json';
 const ENERGY_CACHE_KEY = 'neuralwatt_energy_benchmarks_cache';
 const ENERGY_CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
 
@@ -3498,29 +3503,87 @@ function loadEnergyCache() {
 // Show cached energy data immediately on page load, before any JSON import
 loadEnergyCache();
 
+// Structural check for the repo-hosted energy mirror payload. Keep in sync
+// with lib/core.js (validateEnergyBenchmarksPayload).
+function validateEnergyBenchmarksPayload(payload) {
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return false;
+    if (payload.schemaVersion !== undefined && payload.schemaVersion !== 1) return false;
+    if (!Array.isArray(payload.benchmarks) || payload.benchmarks.length === 0) return false;
+    return payload.benchmarks.every(b =>
+        b !== null && typeof b === 'object' &&
+        typeof b.model === 'string' &&
+        Array.isArray(b.bands) && b.bands.length > 0 &&
+        b.bands.every(band => band !== null && typeof band === 'object' && typeof band.band === 'string')
+    );
+}
+
+// Shared badge updater for the Energy Insights panel.
+const updateEnergyBadge = (status, timeStr = '', source = 'portal.neuralwatt.com') => {
+    const energyStatusBadge = document.getElementById('energy-status-badge');
+    if (!energyStatusBadge) return;
+    if (status === 'syncing') {
+        energyStatusBadge.className = 'legend-chip live-sync-chip';
+        energyStatusBadge.innerHTML = `<span class="live-dot">●</span> Syncing live portal telemetry...`;
+    } else if (status === 'live') {
+        energyStatusBadge.className = 'legend-chip live-sync-chip';
+        energyStatusBadge.innerHTML = `<span class="live-dot">●</span> Live Sync (${escapeHtml(source)}) ${timeStr ? '· updated ' + escapeHtml(timeStr) : ''}`;
+    } else {
+        energyStatusBadge.className = 'legend-chip offline-fallback-chip';
+        energyStatusBadge.innerHTML = `<span class="offline-dot">✕</span> Failed to load live data (No fallback)`;
+    }
+};
+
+// PRIMARY live-data source: the repo-hosted mirror (data/energy-benchmarks.json).
+// It is refreshed server-side by the GitHub Actions workflow
+// (.github/workflows/sync-energy-benchmarks.yml), so the browser never has to
+// talk to portal.neuralwatt.com directly (which sends no CORS headers — direct
+// fetches are blocked in Firefox and others). Also refreshes the localStorage
+// cache so file:// and offline loads keep working.
+async function loadEnergyMirror() {
+    try {
+        const res = await fetch(ENERGY_MIRROR_URL, { cache: 'no-cache' });
+        if (!res.ok) return false;
+        const payload = await res.json();
+        if (!validateEnergyBenchmarksPayload(payload)) {
+            console.error('Energy benchmark mirror failed validation — the portal markup may have changed. Please report it at https://github.com/theflukeman/unofficial-neuralwatt-usage-insights/issues');
+            return false;
+        }
+        const fetchedTime = payload.fetchedAt ? new Date(payload.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        NEURALWATT_ENERGY_BENCHMARKS.length = 0;
+        NEURALWATT_ENERGY_BENCHMARKS.push(...payload.benchmarks);
+        liveEnergyPricingLoaded = true;
+        liveEnergyPricingFetching = false;
+        liveEnergyPricingError = null;
+        try {
+            localStorage.setItem(ENERGY_CACHE_KEY, JSON.stringify({
+                benchmarks: payload.benchmarks,
+                timestamp: Date.now()
+            }));
+        } catch (cacheErr) {
+            // localStorage write may fail (quota, private mode); non-fatal
+        }
+        updateEnergyBadge('live', fetchedTime, 'repo mirror');
+        renderEnergyInsights();
+        if (srAnnouncer) srAnnouncer.textContent = 'Live energy data: synced from repo mirror.';
+        return true;
+    } catch (err) {
+        console.error('Failed to load energy benchmark mirror:', err);
+        return false;
+    }
+}
+
 async function fetchLiveEnergyPricing() {
     // Check browser cache first — avoids redundant network fetches within TTL
     if (loadEnergyCache()) return;
 
-    const energyStatusBadge = document.getElementById('energy-status-badge');
-    const updateBadge = (status, timeStr = '') => {
-        if (!energyStatusBadge) return;
-        if (status === 'syncing') {
-            energyStatusBadge.className = 'legend-chip live-sync-chip';
-            energyStatusBadge.innerHTML = `<span class="live-dot">●</span> Syncing live portal telemetry...`;
-        } else if (status === 'live') {
-            energyStatusBadge.className = 'legend-chip live-sync-chip';
-            energyStatusBadge.innerHTML = `<span class="live-dot">●</span> Live Sync (portal.neuralwatt.com) ${timeStr ? '· updated ' + timeStr : ''}`;
-        } else {
-            energyStatusBadge.className = 'legend-chip offline-fallback-chip';
-            energyStatusBadge.innerHTML = `<span class="offline-dot">✕</span> Failed to load live data (No fallback)`;
-        }
-    };
+    // Then the same-origin repo mirror (no CORS). The direct portal fetch below
+    // remains a fallback for older hosted copies / manual refreshes.
+    if (await loadEnergyMirror()) return;
 
     liveEnergyPricingFetching = true;
     liveEnergyPricingLoaded = false;
     liveEnergyPricingError = null;
-    updateBadge('syncing');
+    updateEnergyBadge('syncing');
     renderEnergyInsights();
 
     const parseEnergyHtml = (html) => {
@@ -3529,7 +3592,19 @@ async function fetchLiveEnergyPricing() {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
-            const table = doc.querySelector('table');
+            // The portal page has TWO tables: a 6-column status board and the
+            // band grid. Only the grid carries the prompt-size band headers —
+            // select it explicitly so markup changes to the status board can't
+            // silently break parsing.
+            const tables = doc.querySelectorAll('table');
+            let table = null;
+            for (const t of tables) {
+                const txt = t.textContent || '';
+                if (txt.includes('0–256') && txt.includes('256–1k') && txt.includes('256k–1M')) {
+                    table = t;
+                    break;
+                }
+            }
             if (!table) return false;
 
             const rows = table.querySelectorAll('tr');
@@ -3568,6 +3643,11 @@ async function fetchLiveEnergyPricing() {
                                     const val = parseFloat(match[1]);
                                     const unit = match[2];
                                     mwh = unit.toLowerCase() === 'wh' ? val * 1000 : val;
+                                } else {
+                                    // Portal markup changed and this cell is no
+                                    // longer parseable — fail loudly instead of
+                                    // showing a bogus "—".
+                                    throw new Error(`Unparseable energy value "${cleanText}" in band "${bandLabel}" for model "${modelName}". Portal markup may have changed.`);
                                 }
                             }
                             const titleAttr = energyDiv.getAttribute('title') || cell.getAttribute('title') || '';
@@ -3653,7 +3733,7 @@ async function fetchLiveEnergyPricing() {
                     } catch (cacheErr) {
                         // localStorage write may fail (quota, private mode); non-fatal
                     }
-                    updateBadge('live', new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+                    updateEnergyBadge('live', new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 'portal.neuralwatt.com');
                     renderEnergyInsights();
                     if (srAnnouncer) srAnnouncer.textContent = 'Live energy data: synced.';
                     return;
@@ -3668,7 +3748,7 @@ async function fetchLiveEnergyPricing() {
     liveEnergyPricingFetching = false;
     liveEnergyPricingError = 'Failed to fetch live telemetry';
     NEURALWATT_ENERGY_BENCHMARKS.length = 0;
-    updateBadge('error');
+    updateEnergyBadge('error');
     renderEnergyInsights();
     if (srAnnouncer) srAnnouncer.textContent = 'Live energy data: failed. Using built-in fallback benchmarks.';
 }

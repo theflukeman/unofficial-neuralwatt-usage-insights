@@ -36,5 +36,22 @@ export default [
             'no-undef': 'error',
             'no-unused-vars': ['error', { vars: 'all', args: 'none', caughtErrors: 'none' }]
         }
+    },
+    // scripts/: ESM node context (dev-only sync tooling, Node >= 18)
+    {
+        files: ['scripts/**/*.js'],
+        languageOptions: {
+            ecmaVersion: 2022,
+            sourceType: 'module',
+            globals: {
+                ...globals.node,
+                fetch: 'readonly',
+                AbortSignal: 'readonly'
+            }
+        },
+        rules: {
+            'no-undef': 'error',
+            'no-unused-vars': ['error', { vars: 'all', args: 'none', caughtErrors: 'none' }]
+        }
     }
 ];

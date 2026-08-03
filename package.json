@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "lint": "eslint app.js lib/ tests/ eslint.config.js"
+    "lint": "eslint app.js lib/ tests/ scripts/ eslint.config.js"
   },
   "devDependencies": {
     "eslint": "^9.0.0"
