@@ -1,0 +1,20 @@
+{
+  "comment": "Official model provider token pricing ($/Mtok) from developer documentation (e.g. docs.z.ai). Edit this file to update rates without touching app.js; app.js falls back to its built-in copy if this file cannot be fetched (e.g. file:// or offline).",
+  "pricing": {
+    "glm-5.2":            { "provider": "Z.ai (ZhipuAI)", "prompt": 1.40, "cache": 0.26, "completion": 4.40 },
+    "glm-5.2-fast":       { "provider": "Z.ai (ZhipuAI)", "prompt": 1.40, "cache": 0.26, "completion": 4.40 },
+    "glm-5.2-short":      { "provider": "Z.ai (ZhipuAI)", "prompt": 1.40, "cache": 0.26, "completion": 4.40 },
+    "glm-5.2-short-fast": { "provider": "Z.ai (ZhipuAI)", "prompt": 1.40, "cache": 0.26, "completion": 4.40 },
+    "glm-5.2-short-flex": { "provider": "Z.ai (ZhipuAI)", "prompt": 1.40, "cache": 0.26, "completion": 4.40 },
+    "gemma-4-31b":        { "provider": "Google / NVIDIA", "prompt": 0.14, "cache": 0.04, "completion": 0.42 },
+    "kimi-k2.6":          { "provider": "Moonshot AI", "prompt": 0.95, "cache": 0.16, "completion": 4.00 },
+    "kimi-k2.6-fast":     { "provider": "Moonshot AI", "prompt": 0.95, "cache": 0.16, "completion": 4.00 },
+    "kimi-k2.7-code":      { "provider": "Moonshot AI", "prompt": 0.95, "cache": 0.16, "completion": 4.00 },
+    "kimi-k2.7-code-flex": { "provider": "Moonshot AI", "prompt": 0.95, "cache": 0.16, "completion": 4.00 },
+    "qwen3.5-397b":       { "provider": "Alibaba Cloud (Qwen)", "prompt": 0.60, "cache": 0.15, "completion": 3.60 },
+    "qwen3.5-397b-fast":  { "provider": "Alibaba Cloud (Qwen)", "prompt": 0.60, "cache": 0.15, "completion": 3.60 },
+    "qwen3.6-35b":        { "provider": "Alibaba Cloud (Qwen)", "prompt": 0.29, "cache": 0.07, "completion": 1.15 },
+    "qwen3.6-35b-fast":   { "provider": "Alibaba Cloud (Qwen)", "prompt": 0.29, "cache": 0.07, "completion": 1.15 },
+    "deepseek-v4-flash":  { "provider": "DeepSeek", "prompt": 0.14, "cache": 0.0028, "completion": 0.28 }
+  }
+}

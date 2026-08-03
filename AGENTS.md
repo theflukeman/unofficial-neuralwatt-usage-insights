@@ -26,7 +26,30 @@ Static, client-side dashboard for analyzing Neuralwatt usage JSON exports.
 - Charts use Chart.js 4 UMD from CDN (`window.Chart`). Do not assume an `import`;
   guard with `typeof Chart !== 'undefined'` if you add conditional rendering.
 - Theme state is a `dark-mode` class on `<body>`. Use CSS variables (`var(--...)`)
-  for all colors; do not hardcode hex values in JS-rendered HTML.
+  for all colors; do not hardcode hex values in JS-rendered HTML. Chart.js dataset
+  colors are exempt (they feed the Chart.js API, not HTML) but must carry a comment
+  linking each hex to its `--accent-*` variable.
+- **XSS rule:** any `innerHTML`/template-literal rendering of user-controlled data
+  (model names, filenames, error messages, fetched telemetry) MUST go through the
+  `escapeHtml()` helper. Never interpolate a user-controlled value into `innerHTML`
+  unescaped. Prefer `textContent` for plain messages.
+- Sortable table headers must be keyboard-accessible. Use the shared helpers
+  `makeSortableHeader()` / `updateSortAria()` (app.js) — they add `role="button"`,
+  `tabindex="0"`, `aria-sort`, `aria-label`, and Enter/Space activation.
+- Dynamic state changes announced to screen readers go through the `#sr-announcer`
+  element (`aria-live="polite"`, class `sr-only`) via `textContent`, never `innerHTML`.
+
+## External data files
+
+- Pricing tables live in `data/neuralwatt-pricing.json` and
+  `data/provider-pricing.json` and are fetched at init by
+  `loadExternalPricingTables()`. The built-in copies in `app.js`
+  (`NEURALWATT_MODEL_PRICING`, `PROVIDER_MODEL_PRICING`) are fallback defaults —
+  keep them in sync when updating the JSON files. The fetch failing (file://,
+  offline) silently keeps the built-ins; do not turn that into an error.
+- Live-session persistence uses the versioned `localStorage` key
+  `neuralwatt_session_v1` (parsed JSON + filter state). Stale/corrupt payloads are
+  silently cleared. Do not rename the key without a migration plan.
 
 ## Data model (assumptions to preserve)
 
@@ -41,7 +64,20 @@ Static, client-side dashboard for analyzing Neuralwatt usage JSON exports.
 
 ## Running / verifying changes
 
-There is no test suite. To verify:
+The static site has no test suite of its own at runtime, but Phase 4 added a
+**dev-only** test/lint harness (does not affect the zero-build site):
+
+- `npm install` — install dev tooling (ESLint only; tests use `node:test`, no deps)
+- `npm test` — runs `tests/core.test.js` against the pure mirrors in `lib/`
+  (escapeHtml, clampFinite, validateUsageData, date helpers, getCalculatedCosts)
+- `npm run lint` — ESLint over `app.js`, `lib/`, `tests/`
+
+`lib/` is a **sanctioned dev-only carve-out** from the single-file rule: the
+functions there are duplicated pure mirrors of `app.js` logic for unit-test
+import only. `app.js` remains the runtime source of truth — keep the copies in
+sync when changing behavior.
+
+To verify the site manually:
 
 1. Serve the directory: `python3 -m http.server 8000`
 2. Load it in a browser and import a known-good JSON export.
@@ -49,8 +85,8 @@ There is no test suite. To verify:
    and searchable, CSV export works, model filter and date-range filter apply,
    theme toggle flips light/dark.
 
-CDN Chart.js requires internet access in the browser. If offline, charts will not
-render — that is expected.
+Chart.js is loaded from the committed `vendor/chart.umd.min.js` copy with a CDN
+fallback, so charts render offline too (the old CDN-only behavior is gone).
 
 ## Files that must never be committed
 

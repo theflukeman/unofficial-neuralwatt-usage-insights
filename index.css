@@ -26,6 +26,12 @@
     
     --glass-bg: rgba(253, 252, 247, 0.8);
     --glass-border: rgba(8, 26, 23, 0.08);
+
+    /* Stacked-card table tint (Phase 3.4) — same moss tint as the legacy
+       rgba(155, 170, 149, …) hover used elsewhere, exposed as variables so
+       card colors stay theme-driven. */
+    --table-card-bg: rgba(155, 170, 149, 0.03);
+    --table-card-bg-hover: rgba(155, 170, 149, 0.06);
 }
 
 .dark-mode {
@@ -1122,6 +1128,17 @@ code, .font-mono {
     width: 100%;
 }
 
+/* Placeholder shown when Chart.js CDN is unavailable (offline/blocked). */
+.chart-unavailable-placeholder {
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 1.5rem;
+    line-height: 1.4;
+    opacity: 0.85;
+}
+
 .full-width-md {
     grid-column: span 2;
 }
@@ -1442,6 +1459,69 @@ code, .font-mono {
     }
 }
 
+/* Phase 3.4 — Responsive stacked-card tables on small screens.
+   Progressive enhancement: on ≤640px the granular logs, model performance,
+   and energy benchmark tables render each <tr> as a card, using the
+   data-label attributes set by the JS renderers for column headers.
+   Larger screens keep the normal table + horizontal scroll. */
+@media (max-width: 640px) {
+    .table-container {
+        overflow-x: visible;
+    }
+    /* The model comparison table is transposed (metrics as rows); keep it as a
+       normal scrollable table instead of stacking it into label-less cards. */
+    .comparison-table-container {
+        overflow-x: auto;
+    }
+    .logs-table:not(#model-comparison-table) thead {
+        display: none;
+    }
+    .logs-table:not(#model-comparison-table) tbody {
+        display: block;
+    }
+    .logs-table:not(#model-comparison-table) tbody tr {
+        display: block;
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 0.75rem;
+        margin-bottom: 0.75rem;
+        background-color: var(--table-card-bg);
+    }
+    .logs-table:not(#model-comparison-table) tbody tr:hover {
+        background-color: var(--table-card-bg-hover);
+    }
+    .logs-table:not(#model-comparison-table) tbody td {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+        padding: 0.4rem 0;
+        border-bottom: 1px dashed var(--border-color);
+        text-align: right;
+        white-space: normal;
+    }
+    .logs-table:not(#model-comparison-table) tbody td:last-child {
+        border-bottom: none;
+    }
+    .logs-table:not(#model-comparison-table) tbody td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-align: left;
+        flex-shrink: 0;
+        min-width: 40%;
+        white-space: normal;
+    }
+    /* Full-width rows inside cards (empty-state / banner rows). */
+    .logs-table:not(#model-comparison-table) tbody td[colspan] {
+        display: block;
+        text-align: center;
+    }
+    .logs-table:not(#model-comparison-table) tbody td[colspan]::before {
+        content: none;
+    }
+}
+
 .directions-list {
     text-align: left;
     background-color: rgba(155, 170, 149, 0.05);
@@ -1741,6 +1821,23 @@ a:hover,
     font-size: 0.8rem;
 }
 
+/* Phase 3.5 — non-blocking fallback badge for live Neuralwatt pricing. */
+.pricing-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.85rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background-color: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    cursor: help;
+    line-height: 1.4;
+}
+
 @keyframes pulse-green {
     0% { opacity: 1; }
     50% { opacity: 0.4; }
@@ -1781,6 +1878,62 @@ a:hover,
     background: rgba(213, 89, 52, 0.1);
     color: var(--accent-terracotta);
     border-color: var(--accent-terracotta);
+}
+
+/* Visually hidden, but available to screen readers (live announcer). */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Model Comparison section */
+.comparison-section {
+    margin-top: 2rem;
+}
+.comparison-model-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    font-size: 0.85rem;
+}
+.comparison-toggle-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.comparison-toggle-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--border-color);
+    border-radius: 9999px;
+    cursor: pointer;
+    user-select: none;
+}
+.comparison-toggle-chip input {
+    accent-color: var(--accent-terracotta);
+}
+#model-comparison-table .metric-name-cell {
+    font-weight: 600;
+    text-align: left;
+    white-space: nowrap;
+}
+#model-comparison-table .comparison-best-cell {
+    font-weight: 700;
+    color: var(--accent-green);
+    background-color: rgba(46, 125, 50, 0.08);
+}
+body.dark-mode #model-comparison-table .comparison-best-cell {
+    color: #81c784;
+    background-color: rgba(129, 199, 132, 0.12);
 }
 
 

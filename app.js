@@ -1,5 +1,4 @@
 // DOM ELEMENTS
-const dashboardContainer = document.getElementById('dashboard-container');
 const periodBadge = document.getElementById('period-badge');
 const miniUploadBtn = document.getElementById('mini-upload-btn');
 const mainFileInput = document.getElementById('main-file-input');
@@ -14,12 +13,16 @@ const importErrorList = importErrorBanner.querySelector('.import-error-list');
 const importErrorCloseBtn = importErrorBanner.querySelector('.import-error-close');
 let importErrorTimer = null;
 
+// Screen-reader live announcer (populated via textContent at state changes).
+const srAnnouncer = document.getElementById('sr-announcer');
+
 function showImportErrors(messages) {
     if (!messages || messages.length === 0) {
         hideImportErrors();
         return;
     }
-    importErrorList.innerHTML = messages.map(m => `<li>${m}</li>`).join('');
+    // Messages may include user-controlled filenames; escape before injection.
+    importErrorList.innerHTML = messages.map(m => `<li>${escapeHtml(m)}</li>`).join('');
     importErrorBanner.style.display = 'block';
     // Auto-dismiss after 12 seconds; any new error resets the timer.
     if (importErrorTimer) clearTimeout(importErrorTimer);
@@ -112,7 +115,10 @@ let customTpCacheRate = 0.50; // $/Million tokens
 let customTpOutputRate = 3.00; // $/Million tokens
 
 // Official Neuralwatt token pricing ($/Mtok) from portal.neuralwatt.com/pricing#all-models
-const NEURALWATT_MODEL_PRICING = {
+// Phase 3.6: `let` so loadExternalPricingTables() can overwrite these with the
+// contents of data/neuralwatt-pricing.json. The built-in copy is the fallback
+// when the external file cannot be fetched (file:// or offline).
+let NEURALWATT_MODEL_PRICING = {
     'glm-5.2':            { prompt: 1.45, cache: 0.36, completion: 4.50 },
     'glm-5.2-fast':       { prompt: 1.45, cache: 0.36, completion: 4.50 },
     'glm-5.2-short':      { prompt: 1.45, cache: 0.36, completion: 4.50 },
@@ -130,7 +136,10 @@ const NEURALWATT_MODEL_PRICING = {
 };
 
 // Official model provider token pricing ($/Mtok) from developer documentation (e.g. docs.z.ai)
-const PROVIDER_MODEL_PRICING = {
+// Phase 3.6: `let` so loadExternalPricingTables() can overwrite these with the
+// contents of data/provider-pricing.json. The built-in copy is the fallback
+// when the external file cannot be fetched (file:// or offline).
+let PROVIDER_MODEL_PRICING = {
     'glm-5.2':            { provider: 'Z.ai (ZhipuAI)', prompt: 1.40, cache: 0.26, completion: 4.40 },
     'glm-5.2-fast':       { provider: 'Z.ai (ZhipuAI)', prompt: 1.40, cache: 0.26, completion: 4.40 },
     'glm-5.2-short':      { provider: 'Z.ai (ZhipuAI)', prompt: 1.40, cache: 0.26, completion: 4.40 },
@@ -179,6 +188,8 @@ let openRouterModels = [];
 let calculatedTotals = {};
 let calculatedTimeline = [];
 let calculatedTimelineSorted = [];
+let perModelTimeline = []; // per-model (ungrouped) costed rows for chart toggle
+let breakdownByModel = false; // "Breakdown by Model" chart toggle state
 
 // CHART INSTANCES
 let costSavingsChart = null;
@@ -186,6 +197,12 @@ let cachePerformanceChart = null;
 let costEfficiencyChart = null;
 
 // THEME TOGGLER
+// Phase 3.2: an explicit toggle choice sets localStorage 'theme'; afterwards
+// OS prefers-color-scheme changes are ignored (initTheme's matchMedia
+// listener is detached here via stopFollowingSystemTheme()).
+let themeMediaQuery = null;
+let themeMediaListener = null;
+
 themeToggleBtn.addEventListener('click', () => {
     if (bodyEl.classList.contains('dark-mode')) {
         bodyEl.classList.remove('dark-mode');
@@ -194,6 +211,7 @@ themeToggleBtn.addEventListener('click', () => {
         bodyEl.classList.add('dark-mode');
         localStorage.setItem('theme', 'dark');
     }
+    stopFollowingSystemTheme();
     if (rawData) {
         renderCharts();
         renderEnergyInsights();
@@ -201,15 +219,89 @@ themeToggleBtn.addEventListener('click', () => {
 });
 
 // INITIALIZE THEME ON LOAD
-function initTheme() {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'light') {
+// Phase 3.2: on first visit (no saved preference) follow the OS
+// prefers-color-scheme setting and keep listening for OS changes until
+// the user explicitly picks a theme via the toggle (which sets
+// localStorage 'theme', after which OS changes are ignored).
+function applyTheme(theme) {
+    if (theme === 'light') {
         bodyEl.classList.remove('dark-mode');
     } else {
         bodyEl.classList.add('dark-mode');
     }
 }
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+        applyTheme(savedTheme);
+        return;
+    }
+    // No explicit preference yet — follow the OS.
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(prefersDark ? 'dark' : 'light');
+    if (window.matchMedia) {
+        themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        themeMediaListener = (e) => {
+            // Only react to OS changes while the user hasn't set a preference.
+            if (!localStorage.getItem('theme')) {
+                applyTheme(e.matches ? 'dark' : 'light');
+            }
+        };
+        if (themeMediaQuery.addEventListener) {
+            themeMediaQuery.addEventListener('change', themeMediaListener);
+        } else if (themeMediaQuery.addListener) {
+            themeMediaQuery.addListener(themeMediaListener);
+        }
+    }
+}
+
+// Detach the OS-theme listener once the user picks an explicit theme.
+// Idempotent; safe when matchMedia is unavailable or no listener exists.
+function stopFollowingSystemTheme() {
+    if (themeMediaQuery && themeMediaListener) {
+        if (themeMediaQuery.removeEventListener) {
+            themeMediaQuery.removeEventListener('change', themeMediaListener);
+        } else if (themeMediaQuery.removeListener) {
+            themeMediaQuery.removeListener(themeMediaListener);
+        }
+        themeMediaQuery = null;
+        themeMediaListener = null;
+    }
+}
 initTheme();
+
+// Sync the visible control inputs to the current JS state variables. Used
+// after a session restore so the DOM reflects the persisted filter state.
+function syncControlsFromState() {
+    if (modelFilterSelect) modelFilterSelect.value = selectedModel || '';
+    if (startDateFilterInput) startDateFilterInput.value = filterStartDate || '';
+    if (endDateFilterInput) endDateFilterInput.value = filterEndDate || '';
+    if (costCalcModeSelect) {
+        costCalcModeSelect.value = costCalcMode || 'flat-10';
+        customRateContainer.style.display = (costCalcMode === 'custom') ? 'flex' : 'none';
+    }
+    if (customRateInput) customRateInput.value = customKwhRate;
+    if (thirdPartyProviderSelect) {
+        thirdPartyProviderSelect.value = thirdPartyCompareRate || 'auto-match';
+        const ctp = document.getElementById('custom-third-party-container');
+        if (ctp) ctp.style.display = (thirdPartyCompareRate === 'custom-rates') ? 'flex' : 'none';
+    }
+    if (document.getElementById('custom-tp-input')) document.getElementById('custom-tp-input').value = customTpInputRate;
+    if (document.getElementById('custom-tp-cache')) document.getElementById('custom-tp-cache').value = customTpCacheRate;
+    if (document.getElementById('custom-tp-output')) document.getElementById('custom-tp-output').value = customTpOutputRate;
+}
+
+// Restore a persisted session (if any) before first render.
+(function initApp() {
+    if (restoreSession()) {
+        // Rebuild options/inputs to reflect the restored models + filter state.
+        populateModelOptions();
+        syncControlsFromState();
+        compileMergedData();
+        updateCalculationsAndRender();
+    }
+})();
 
 // BOOKMARKLET GENERATOR LOGIC
 function buildBookmarkletScript(timeUnit, timeVal, timezone) {
@@ -218,6 +310,20 @@ function buildBookmarkletScript(timeUnit, timeVal, timezone) {
     if (unit === 'hours' && val > 72) val = 72;
     const tz = (timezone || 'America/New_York').trim();
 
+    // NOTE: The generated script below runs on portal.neuralwatt.com, a
+    // foreign origin where this app's index.css is NOT loaded. The inline
+    // hex colors (#1a1d24, #fff, #d55934, #ff6b6b) below are therefore a
+    // justified exemption from the "no hardcoded hex in JS-rendered HTML"
+    // rule (AC.5): our CSS variables (--accent-terracotta, etc.) are
+    // undefined on that page, so var() references would render blank.
+    // This mirrors the Chart.js config exemption — concrete colors are
+    // required where var(--…) cannot resolve. Do not "fix" by replacing
+    // these with var() references.
+    // Same foreign-origin exemption applies to the banner messages below:
+    // msg (including model names read from the foreign page) is interpolated
+    // into banner.innerHTML UNESCAPED deliberately, because escapeHtml is not
+    // available inside the generated script. Downloads use
+    // encodeURIComponent'd model ids.
     const script = `(async function(){
         const unit="${unit}";
         const val="${val}";
@@ -503,6 +609,11 @@ miniFileInput.addEventListener('change', (e) => {
 modelFilterSelect.addEventListener('change', (e) => {
     selectedModel = e.target.value;
     updateCalculationsAndRender();
+    if (srAnnouncer) {
+        srAnnouncer.textContent = selectedModel
+            ? `Filter applied: model ${selectedModel} selected.`
+            : 'Filter applied: showing all models.';
+    }
 });
 
 costCalcModeSelect.addEventListener('change', (e) => {
@@ -560,12 +671,81 @@ document.getElementById('custom-tp-output').addEventListener('input', (e) => {
 startDateFilterInput.addEventListener('change', (e) => {
     filterStartDate = e.target.value;
     updateCalculationsAndRender();
+    if (srAnnouncer) {
+        srAnnouncer.textContent = `Filter applied: start date ${filterStartDate || 'unset'}.`;
+    }
 });
 
 endDateFilterInput.addEventListener('change', (e) => {
     filterEndDate = e.target.value;
+    // Manual date change reverts the Quick Range control to "Custom".
+    const qr = document.getElementById('quick-range-select');
+    if (qr) qr.value = 'custom';
     updateCalculationsAndRender();
+    if (srAnnouncer) {
+        srAnnouncer.textContent = `Filter applied: end date ${filterEndDate || 'unset'}.`;
+    }
 });
+
+// QUICK RANGE PRESETS — relative to the latest date in the data.
+// "periods" (not days) because data may be hourly granularity.
+const quickRangeSelect = document.getElementById('quick-range-select');
+if (quickRangeSelect) {
+    quickRangeSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (val === 'custom') return; // manual control
+
+        const dates = (rawData && rawData.daily ? rawData.daily.map(d => d.date) : []);
+        if (dates.length === 0) return;
+        // Distinct sorted ascending dates.
+        const uniqueDates = Array.from(new Set(dates)).sort();
+        const latest = uniqueDates[uniqueDates.length - 1];
+        const earliest = uniqueDates[0];
+
+        if (val === 'full') {
+            filterStartDate = earliest;
+            filterEndDate = latest;
+        } else {
+            const n = parseInt(val, 10);
+            const startIdx = Math.max(0, uniqueDates.length - n);
+            filterStartDate = uniqueDates[startIdx];
+            filterEndDate = latest;
+        }
+
+        if (startDateFilterInput) startDateFilterInput.value = filterStartDate;
+        if (endDateFilterInput) endDateFilterInput.value = filterEndDate;
+        updateCalculationsAndRender();
+        if (srAnnouncer) {
+            const label = val === 'full'
+                ? 'Full range'
+                : `Last ${val} periods`;
+            srAnnouncer.textContent = `Filter applied: quick range ${label}.`;
+        }
+    });
+}
+
+// CLEAR SESSION — purge persisted session + reset to empty state.
+const clearSessionBtn = document.getElementById('clear-session-btn');
+if (clearSessionBtn) {
+    clearSessionBtn.addEventListener('click', () => {
+        clearSession();
+        loadedFiles = [];
+        rawData = null;
+        selectedModel = '';
+        filterStartDate = '';
+        filterEndDate = '';
+        costCalcMode = 'flat-10';
+        thirdPartyCompareRate = 'auto-match';
+        breakdownByModel = false;
+        selectedComparisonModels.clear();
+        if (costSavingsChart) { costSavingsChart.destroy(); costSavingsChart = null; }
+        if (cachePerformanceChart) { cachePerformanceChart.destroy(); cachePerformanceChart = null; }
+        if (costEfficiencyChart) { costEfficiencyChart.destroy(); costEfficiencyChart = null; }
+        if (energyInsightsChart) { energyInsightsChart.destroy(); energyInsightsChart = null; }
+        updateCalculationsAndRender();
+        if (srAnnouncer) srAnnouncer.textContent = 'Data cleared.';
+    });
+}
 
 // ENERGY INSIGHTS CONTROLS LISTENERS
 
@@ -584,31 +764,33 @@ if (btnFetchTop) {
 }
 
 if (energyBenchmarkTableHeaders) {
-    energyBenchmarkTableHeaders.forEach(th => {
-        th.addEventListener('click', () => {
-            const column = th.getAttribute('data-sort');
-            energyBenchmarkTableHeaders.forEach(header => {
-                if (header !== th) {
-                    header.classList.remove('sorted-asc', 'sorted-desc');
-                    const indicator = header.querySelector('.sort-indicator');
-                    if (indicator) indicator.textContent = '';
-                }
-            });
-
-            if (energyTableSortColumn === column) {
-                energyTableSortDirection = energyTableSortDirection === 'asc' ? 'desc' : 'asc';
-            } else {
-                energyTableSortColumn = column;
-                energyTableSortDirection = 'asc';
+    const handleEnergyTableSort = (th) => {
+        const column = th.getAttribute('data-sort');
+        energyBenchmarkTableHeaders.forEach(header => {
+            if (header !== th) {
+                header.classList.remove('sorted-asc', 'sorted-desc');
+                const indicator = header.querySelector('.sort-indicator');
+                if (indicator) indicator.textContent = '';
             }
-
-            th.classList.remove('sorted-asc', 'sorted-desc');
-            th.classList.add(energyTableSortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
-            const indicator = th.querySelector('.sort-indicator');
-            if (indicator) indicator.textContent = energyTableSortDirection === 'asc' ? ' ↑' : ' ↓';
-
-            renderEnergyInsights();
         });
+
+        if (energyTableSortColumn === column) {
+            energyTableSortDirection = energyTableSortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            energyTableSortColumn = column;
+            energyTableSortDirection = 'asc';
+        }
+
+        th.classList.remove('sorted-asc', 'sorted-desc');
+        th.classList.add(energyTableSortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+        const indicator = th.querySelector('.sort-indicator');
+        if (indicator) indicator.textContent = energyTableSortDirection === 'asc' ? ' ↑' : ' ↓';
+
+        updateSortAria(th, energyBenchmarkTableHeaders, energyTableSortDirection);
+        renderEnergyInsights();
+    };
+    energyBenchmarkTableHeaders.forEach(th => {
+        makeSortableHeader(th, () => handleEnergyTableSort(th));
     });
 }
 
@@ -617,19 +799,24 @@ if (energyBenchmarkTableHeaders) {
 function handleFilesSelection(filesList) {
     const files = Array.from(filesList);
     let errors = [];
-    let loadedCount = 0;
     
     let promises = files.map(file => {
         return new Promise((resolve) => {
-            if (!file.name.endsWith('.json')) {
+            if (!file.name.toLowerCase().endsWith('.json')) {
                 errors.push(`${file.name}: Only JSON format is supported.`);
                 return resolve();
             }
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
+                    // Handle empty files (0 bytes) with a specific message.
+                    if (file.size === 0) {
+                        errors.push(`${file.name}: Empty file (0 bytes). Nothing to import.`);
+                        return resolve();
+                    }
                     const data = JSON.parse(e.target.result);
-                    if (validateUsageData(data)) {
+                    const v = validateUsageData(data);
+                    if (v.valid) {
                         if (!data.by_model || data.by_model.length !== 1) {
                             errors.push(`${file.name}: Must contain data for exactly ONE model. Found ${data.by_model ? data.by_model.length : 0}. Please export single-model files from the portal.`);
                             return resolve();
@@ -637,8 +824,11 @@ function handleFilesSelection(filesList) {
 
                         const modelName = data.by_model[0].model;
 
-                        // Overwrite if same model is re-uploaded
+                        // Overwrite if same model is re-uploaded (by modelName)
                         loadedFiles = loadedFiles.filter(f => f.modelName !== modelName);
+                        // Also dedup by fileName: re-importing a renamed copy
+                        // of the same export should overwrite, not duplicate.
+                        loadedFiles = loadedFiles.filter(f => f.fileName !== file.name);
 
                         // Normalize daily/hourly rows
                         if (!data.daily && data.hourly) {
@@ -650,9 +840,8 @@ function handleFilesSelection(filesList) {
                             modelName: modelName,
                             data: data
                         });
-                        loadedCount++;
                     } else {
-                        errors.push(`${file.name}: Invalid Neuralwatt usage JSON format.`);
+                        errors.push(`${file.name}: ${v.errors.join(' ')}`);
                     }
                 } catch (err) {
                     errors.push(`${file.name}: Failed to parse JSON.`);
@@ -670,21 +859,36 @@ function handleFilesSelection(filesList) {
             hideImportErrors();
         }
         if (loadedFiles.length > 0) {
-            compileMergedData();
-            
-            if (selectedModel === '') {
-                costCalcMode = 'flat-10';
-                costCalcModeSelect.value = 'flat-10';
-                customRateContainer.style.display = 'none';
-                thirdPartyCompareRate = 'auto-match';
-                thirdPartyProviderSelect.value = 'auto-match';
-            }
+            // Wrap the post-merge phase so a runtime error in aggregation or
+            // rendering — e.g. from data that passes the validator but breaks
+            // a calculation — surfaces in the error banner instead of failing
+            // silently inside the promise handler.
+            try {
+                compileMergedData();
 
-            if (!liveEnergyPricingLoaded && !liveEnergyPricingFetching) {
-                fetchLiveEnergyPricing();
-            }
+                if (selectedModel === '') {
+                    costCalcMode = 'flat-10';
+                    costCalcModeSelect.value = 'flat-10';
+                    customRateContainer.style.display = 'none';
+                    thirdPartyCompareRate = 'auto-match';
+                    thirdPartyProviderSelect.value = 'auto-match';
+                }
 
-            updateCalculationsAndRender();
+                if (!liveEnergyPricingLoaded && !liveEnergyPricingFetching) {
+                    fetchLiveEnergyPricing();
+                }
+
+                updateCalculationsAndRender();
+
+                // Announce import success for screen readers.
+                if (srAnnouncer) {
+                    const totalReqs = calculatedTotals.requests || 0;
+                    srAnnouncer.textContent = `Data loaded: ${loadedFiles.length} model${loadedFiles.length > 1 ? 's' : ''}, ${formatNumber(totalReqs)} requests`;
+                }
+            } catch (mergeErr) {
+                console.error('Post-merge error:', mergeErr);
+                showImportErrors([`Error processing imported data: ${escapeHtml(mergeErr && mergeErr.message ? mergeErr.message : String(mergeErr))}`]);
+            }
         }
     });
 }
@@ -695,10 +899,15 @@ function compileMergedData() {
         rawData = null;
         return;
     }
-    
+    // Guard against partial state: drop entries with null/missing data.
+    const validFiles = loadedFiles.filter(f => f && f.data);
+    if (validFiles.length === 0) {
+        rawData = null;
+        return;
+    }
     let minStart = null;
     let maxEnd = null;
-    loadedFiles.forEach(f => {
+    validFiles.forEach(f => {
         if (f.data && f.data.period) {
             if (f.data.period.start) {
                 const start = new Date(f.data.period.start);
@@ -711,7 +920,7 @@ function compileMergedData() {
         }
     });
     
-    const firstData = loadedFiles[0].data || {};
+    const firstData = (validFiles[0] && validFiles[0].data) || {};
     rawData = {
         period: {
             start: (minStart && !isNaN(minStart.getTime())) ? minStart.toISOString() : new Date().toISOString(),
@@ -747,26 +956,30 @@ function compileMergedData() {
     
     const uniqueKeysMap = new Map();
     
-    loadedFiles.forEach(f => {
+    validFiles.forEach(f => {
         const fd = f.data || {};
         const totals = fd.totals || {};
-        
-        rawData.totals.requests += totals.requests || 0;
-        rawData.totals.tokens += totals.tokens || 0;
-        rawData.totals.prompt_tokens += totals.prompt_tokens || 0;
-        rawData.totals.completion_tokens += totals.completion_tokens || 0;
-        rawData.totals.cached_tokens += totals.cached_tokens || 0;
-        rawData.totals.cost += totals.cost || 0;
-        rawData.totals.token_cost += totals.token_cost || 0;
-        rawData.totals.energy_kwh += totals.energy_kwh || 0;
-        rawData.totals.charged_energy_kwh += totals.charged_energy_kwh || 0;
-        rawData.totals.energy_joules += totals.energy_joules || 0;
-        rawData.totals.requests_with_energy += totals.requests_with_energy || 0;
-        rawData.totals.carbon_g += totals.carbon_g || 0;
-        rawData.totals.requests_with_carbon += totals.requests_with_carbon || 0;
-        rawData.totals.self_hosted_cost += totals.self_hosted_cost || 0;
-        rawData.totals.third_party_cost += totals.third_party_cost || 0;
-        rawData.totals.third_party_requests += totals.third_party_requests || 0;
+
+        // clampFinite guards against null/NaN/Infinity that `|| 0` misses
+        // (e.g. cached_tokens may be null in some exports). All counts are
+        // non-negative.
+        const T = rawData.totals;
+        T.requests += clampFinite(totals.requests, 0, true);
+        T.tokens += clampFinite(totals.tokens, 0, true);
+        T.prompt_tokens += clampFinite(totals.prompt_tokens, 0, true);
+        T.completion_tokens += clampFinite(totals.completion_tokens, 0, true);
+        T.cached_tokens += clampFinite(totals.cached_tokens, 0, true);
+        T.cost += clampFinite(totals.cost, 0, true);
+        T.token_cost += clampFinite(totals.token_cost, 0, true);
+        T.energy_kwh += clampFinite(totals.energy_kwh, 0, true);
+        T.charged_energy_kwh += clampFinite(totals.charged_energy_kwh, 0, true);
+        T.energy_joules += clampFinite(totals.energy_joules, 0, true);
+        T.requests_with_energy += clampFinite(totals.requests_with_energy, 0, true);
+        T.carbon_g += clampFinite(totals.carbon_g, 0, true);
+        T.requests_with_carbon += clampFinite(totals.requests_with_carbon, 0, true);
+        T.self_hosted_cost += clampFinite(totals.self_hosted_cost, 0, true);
+        T.third_party_cost += clampFinite(totals.third_party_cost, 0, true);
+        T.third_party_requests += clampFinite(totals.third_party_requests, 0, true);
         
         if (Array.isArray(fd.by_model) && fd.by_model.length > 0) {
             fd.by_model.forEach(m => {
@@ -890,7 +1103,7 @@ function renderImportedModelsList() {
         const chip = document.createElement('div');
         chip.className = 'imported-model-chip';
         chip.innerHTML = `
-            <span><strong>${f.modelName}</strong> <span style="font-size:0.65rem; color:var(--text-secondary);">(${f.fileName})</span></span>
+            <span><strong>${escapeHtml(f.modelName)}</strong> <span style="font-size:0.65rem; color:var(--text-secondary);">(${escapeHtml(f.fileName)})</span></span>
             <button class="btn-remove-model" data-index="${idx}" title="Remove Model">×</button>
         `;
         listEl.appendChild(chip);
@@ -917,10 +1130,96 @@ function renderImportedModelsList() {
 }
 
 // SCHEMA VALIDATOR
+// Optionally clamp counts (requests/tokens) to non-negative values. Pass
+// `false` for fields that may legitimately be signed (e.g. cost deltas).
+function clampFinite(value, fallback, nonNegative) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+    if (nonNegative && value < 0) return fallback;
+    return value;
+}
+
+// Structural / field-level validation for a Neuralwatt usage export.
+// Returns { valid: boolean, errors: string[] }. The single-model invariant
+// (by_model must be absent OR contain exactly ONE entry) is intentionally
+// NOT enforced here — that gate lives in handleFilesSelection so a clear,
+// user-facing "exactly ONE model" message is shown. validateUsageData
+// focuses on shape: object type, totals types, non-empty array fields,
+// and per-entry model/date field presence.
 function validateUsageData(data) {
-    if (!data || typeof data !== 'object') return false;
-    return (data.totals !== undefined || data.by_model !== undefined || data.period !== undefined) && 
-           (Array.isArray(data.daily) || Array.isArray(data.hourly) || Array.isArray(data.rows) || Array.isArray(data.by_model) || Array.isArray(data.usage));
+    const errors = [];
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+        errors.push('Invalid Neuralwatt usage JSON format.');
+        return { valid: false, errors };
+    }
+
+    // totals: object when present
+    if (data.totals !== undefined) {
+        if (typeof data.totals !== 'object' || data.totals === null || Array.isArray(data.totals)) {
+            errors.push('Field "totals" must be an object.');
+        } else {
+            if ('requests' in data.totals && typeof data.totals.requests !== 'number') {
+                errors.push('Field "totals.requests" must be a number.');
+            }
+            if ('tokens' in data.totals && typeof data.totals.tokens !== 'number') {
+                errors.push('Field "totals.tokens" must be a number.');
+            }
+        }
+    }
+
+    // Require at least one non-empty timeseries array.
+    const arrayFields = ['daily', 'hourly', 'rows', 'by_model', 'usage'];
+    let arrayFound = false;
+    for (const f of arrayFields) {
+        if (data[f] !== undefined) {
+            if (!Array.isArray(data[f])) {
+                errors.push(`Field "${f}" must be an array.`);
+            } else if (data[f].length === 0) {
+                errors.push(`Field "${f}" is an empty array; no timeseries data present.`);
+            } else {
+                arrayFound = true;
+            }
+        }
+    }
+
+    // by_model entries must each have a model string field.
+    if (Array.isArray(data.by_model) && data.by_model.length > 0) {
+        data.by_model.forEach((entry, i) => {
+            if (typeof entry !== 'object' || entry === null || typeof entry.model !== 'string') {
+                errors.push(`by_model[${i}] must have a string "model" field.`);
+            }
+        });
+    }
+
+    // daily/hourly rows must each carry a date and numeric tokens/requests.
+    ['daily', 'hourly'].forEach(f => {
+        if (Array.isArray(data[f]) && data[f].length > 0) {
+            data[f].forEach((entry, i) => {
+                if (typeof entry !== 'object' || entry === null) {
+                    errors.push(`${f}[${i}] must be an object.`);
+                    return;
+                }
+                if (entry.date === undefined || entry.date === null) {
+                    errors.push(`${f}[${i}] missing "date" field.`);
+                }
+                if ('tokens' in entry && typeof entry.tokens !== 'number') {
+                    errors.push(`${f}[${i}].tokens must be a number.`);
+                }
+                if ('requests' in entry && typeof entry.requests !== 'number') {
+                    errors.push(`${f}[${i}].requests must be a number.`);
+                }
+            });
+        }
+    });
+
+    // Require a recognized top-level marker OR a non-empty array.
+    const hasMarker = data.totals !== undefined || data.by_model !== undefined || data.period !== undefined;
+    if (!hasMarker && !arrayFound) {
+        errors.push('Unrecognized JSON: not a Neuralwatt usage export (no totals/by_model/period and no timeseries array).');
+    } else if (!arrayFound && errors.length === 0) {
+        errors.push('No timeseries data found (daily, hourly, rows, by_model, or usage).');
+    }
+
+    return { valid: errors.length === 0, errors };
 }
 
 // POPULATE MODELS OPTIONS
@@ -990,12 +1289,50 @@ async function fetchNeuralwattPricing() {
                     };
                 }
             });
+            // Live pricing fetched OK — hide the fallback badge.
+            const pricingStatus = document.getElementById('neuralwatt-pricing-status');
+            if (pricingStatus) pricingStatus.style.display = 'none';
             if (rawData) {
                 updateCalculationsAndRender();
             }
         }
     } catch (err) {
         console.log('Neuralwatt live API pricing fetch skipped/offline, using built-in posted registry:', err);
+        // Phase 3.5 — surface the fallback to built-in rate tables so the
+        // failure is not silent. Non-blocking badge with a tooltip.
+        const pricingStatus = document.getElementById('neuralwatt-pricing-status');
+        if (pricingStatus) pricingStatus.style.display = 'inline-flex';
+    }
+}
+
+// Phase 3.6 — load external pricing tables (data/*.json) at init, keeping the
+// built-in copies as fallback defaults. If the fetch fails (file:// CORS,
+// offline, 404) the built-in tables remain unchanged — no behavior change.
+async function loadExternalPricingTables() {
+    const tryFetch = async (url) => {
+        try {
+            const res = await fetch(url, { cache: 'no-cache' });
+            if (!res.ok) return null;
+            const payload = await res.json();
+            return (payload && typeof payload === 'object' && payload.pricing) ? payload.pricing : null;
+        } catch (err) {
+            return null;
+        }
+    };
+
+    const neuralwatt = await tryFetch('data/neuralwatt-pricing.json');
+    if (neuralwatt && typeof neuralwatt === 'object') {
+        NEURALWATT_MODEL_PRICING = { ...NEURALWATT_MODEL_PRICING, ...neuralwatt };
+    }
+
+    const provider = await tryFetch('data/provider-pricing.json');
+    if (provider && typeof provider === 'object') {
+        PROVIDER_MODEL_PRICING = { ...PROVIDER_MODEL_PRICING, ...provider };
+    }
+
+    // New external entries may enable new fuzzy matches — recompute if data is loaded.
+    if (rawData) {
+        updateCalculationsAndRender();
     }
 }
 
@@ -1390,7 +1727,10 @@ function updateCalculationsAndRender() {
     //    rate resolves the correct OpenRouter match for its model. Grouping
     //    first would lose the `model` field and fall back to the first
     //    model's rate for every aggregated row.
-    calculatedTimeline = timelineSource.map(d => {
+    // Keep `costedTimeline` (per-model, ungrouped) available so the per-model
+    // chart toggle can render one series per model without affecting the
+    // aggregate views (cards, breakdown table, logs).
+    const costedTimeline = timelineSource.map(d => {
         let item = { ...d };
 
         // Model filtering on timeline
@@ -1445,7 +1785,7 @@ function updateCalculationsAndRender() {
     //    values already computed with each model's correct compare rate.
     if (!selectedModel) {
         const grouped = {};
-        calculatedTimeline.forEach(d => {
+        costedTimeline.forEach(d => {
             const dateStr = d.date;
             if (!grouped[dateStr]) {
                 grouped[dateStr] = {
@@ -1476,7 +1816,13 @@ function updateCalculationsAndRender() {
             grouped[dateStr].third_party_cost += d.third_party_cost || 0;
         });
         calculatedTimeline = Object.values(grouped);
+    } else {
+        // Single-model filter: the costed rows already reflect just that model.
+        calculatedTimeline = costedTimeline;
     }
+
+    // Per-model (ungrouped) timeline for the "Breakdown by Model" chart toggle.
+    perModelTimeline = costedTimeline;
 
     // Sort timeline ascending for charts
     calculatedTimelineSorted = [...calculatedTimeline].sort((a, b) => parseDateLocal(a.date) - parseDateLocal(b.date));
@@ -1487,6 +1833,116 @@ function updateCalculationsAndRender() {
     renderModelBreakdown();
     renderEnergyInsights();
     renderLogsTable();
+    renderComparison();
+    syncBreakdownToggle();
+
+    // Persist the loaded session so a page reload restores the dashboard.
+    saveSession();
+}
+
+// ===========================================================================
+// SESSION PERSISTENCE (localStorage)
+// Stores parsed export data + filter state under a versioned key so a reload
+// restores the dashboard without re-importing. The raw File objects cannot be
+// serialized, so we persist `data` + `modelName` + `fileName` and rebuild
+// `loadedFiles` on restore. Quota/availability errors are caught and ignored
+// (private mode, quota exceeded, storage disabled) — persistence is best-
+// effort and must never block the dashboard.
+// ===========================================================================
+const SESSION_KEY = 'neuralwatt_session_v1';
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function saveSession() {
+    if (loadedFiles.length === 0) return;
+    try {
+        const payload = {
+            version: 1,
+            savedAt: Date.now(),
+            files: loadedFiles.map(f => ({
+                fileName: f.fileName,
+                modelName: f.modelName,
+                data: f.data
+            })),
+            filter: {
+                selectedModel,
+                filterStartDate,
+                filterEndDate,
+                costCalcMode,
+                customKwhRate,
+                thirdPartyCompareRate,
+                customTpInputRate,
+                customTpCacheRate,
+                customTpOutputRate
+            }
+        };
+        localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    } catch (e) {
+        // Quota exceeded / storage unavailable — non-fatal.
+        console.warn('Could not persist session to localStorage:', e);
+    }
+}
+
+function clearSession() {
+    try {
+        localStorage.removeItem(SESSION_KEY);
+    } catch (e) { /* ignore */ }
+}
+
+function restoreSession() {
+    let raw;
+    try {
+        raw = localStorage.getItem(SESSION_KEY);
+    } catch (e) {
+        return false;
+    }
+    if (!raw) return false;
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    } catch (e) {
+        // Corrupt data — clear it and start empty.
+        clearSession();
+        return false;
+    }
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.files) || parsed.files.length === 0) {
+        clearSession();
+        return false;
+    }
+    // Session age check (avoid restoring very stale data).
+    // Missing/non-numeric savedAt is treated as expired (never restore forever).
+    if (typeof parsed.savedAt !== 'number' || (Date.now() - parsed.savedAt > SESSION_TTL_MS)) {
+        clearSession();
+        return false;
+    }
+    // Rebuild loadedFiles (synthetic filenames for restored entries).
+    loadedFiles = [];
+    for (const f of parsed.files) {
+        if (!f || !f.data || typeof f.data !== 'object') continue;
+        const fileName = f.fileName || `restored: ${f.modelName}`;
+        // Basic structural re-validation to avoid feeding garbage to the engine.
+        const v = validateUsageData(f.data);
+        if (!v.valid) {
+            console.warn(`Skipping restored file "${fileName}": ${v.errors.join(' ')}`);
+            continue;
+        }
+        loadedFiles.push({ fileName, modelName: f.modelName || (f.data.by_model && f.data.by_model[0] && f.data.by_model[0].model), data: f.data });
+    }
+    if (loadedFiles.length === 0) {
+        clearSession();
+        return false;
+    }
+    // Restore filter state.
+    const flt = parsed.filter || {};
+    selectedModel = flt.selectedModel !== undefined ? flt.selectedModel : '';
+    filterStartDate = flt.filterStartDate !== undefined ? flt.filterStartDate : '';
+    filterEndDate = flt.filterEndDate !== undefined ? flt.filterEndDate : '';
+    costCalcMode = flt.costCalcMode !== undefined ? flt.costCalcMode : 'flat-10';
+    customKwhRate = typeof flt.customKwhRate === 'number' ? flt.customKwhRate : 10.00;
+    thirdPartyCompareRate = flt.thirdPartyCompareRate !== undefined ? flt.thirdPartyCompareRate : 'auto-match';
+    customTpInputRate = typeof flt.customTpInputRate === 'number' ? flt.customTpInputRate : 1.00;
+    customTpCacheRate = typeof flt.customTpCacheRate === 'number' ? flt.customTpCacheRate : 0.50;
+    customTpOutputRate = typeof flt.customTpOutputRate === 'number' ? flt.customTpOutputRate : 3.00;
+    return true;
 }
 
 // NUMBER FORMATTING HELPERS
@@ -1507,10 +1963,6 @@ function formatTokens(num) {
 function formatCurrency(num, decimals = 2) {
     const maxDecimals = (decimals === 2 && Math.abs(num) > 0 && Math.abs(num) < 0.01) ? 4 : decimals;
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: decimals, maximumFractionDigits: maxDecimals }).format(num);
-}
-
-function formatDateShort(dateObj) {
-    return dateObj.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 // Parse a date or datetime string from Neuralwatt exports as LOCAL time.
@@ -1546,6 +1998,21 @@ function formatDateTable(dateStr) {
         minute: '2-digit',
         hour12: false
     });
+}
+
+// HTML escaping helper. Imported JSON is rendered into the DOM via
+// innerHTML in several places (Model Breakdown, Imported Files list,
+// Energy Insights, import error banner). Model names and filenames are
+// user-controlled: a crafted export with `model: "<img src=x onerror=…>"`
+// would otherwise execute arbitrary script. Escape the five significant
+// HTML characters before inserting any user-controlled / external string
+// into innerHTML. Numbers produced by the format* helpers are already
+// safe (they come from Number/Math), but model names, filenames, and error
+// messages containing filenames must be escaped.
+const ESCAPE_HTML_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value).replace(/[&<>"']/g, ch => ESCAPE_HTML_MAP[ch]);
 }
 
 // RFC 4180 CSV field escaping: wrap in double quotes, escape embedded
@@ -1636,9 +2103,30 @@ function renderSummaryStats() {
 
 // RENDER CHARTS
 function renderCharts() {
+    // Guard: Chart.js CDN may be unavailable (offline, blocked). Show a
+    // styled placeholder via textContent (never innerHTML) so no script
+    // injection risk, and bail out before touching the Chart constructor.
+    if (typeof Chart === 'undefined') {
+        document.querySelectorAll('.charts-grid .chart-container').forEach(el => {
+            el.style.display = 'flex';
+            el.style.alignItems = 'center';
+            el.style.justifyContent = 'center';
+            el.style.minHeight = '200px';
+            const msg = document.createElement('div');
+            msg.className = 'chart-unavailable-placeholder';
+            msg.textContent = 'Charts unavailable — Chart.js CDN could not be loaded (check network connection).';
+            el.innerHTML = '';
+            el.appendChild(msg);
+        });
+        return;
+    }
+
     const isDark = bodyEl.classList.contains('dark-mode');
-    const textPrimaryColor = isDark ? '#FDFCF7' : '#081A17';
-    const textSecondaryColor = isDark ? '#9BAA95' : '#858458';
+    // Chart axis/text colors resolved to concrete hexes (Chart.js cannot
+    // consume `var(--…)`). Keep in sync with :root / .dark-mode values for
+    // the matching --text-primary / --text-secondary variables.
+    const textPrimaryColor = isDark ? '#FDFCF7' : '#081A17';   // --text-primary / --text-on-dark
+    const textSecondaryColor = isDark ? '#9BAA95' : '#858458'; // --text-secondary
     const gridColor = isDark ? 'rgba(253, 252, 247, 0.08)' : 'rgba(8, 26, 23, 0.08)';
 
     // Chart dataset palette mirrors the CSS-variable accents in index.css
@@ -1663,43 +2151,92 @@ function renderCharts() {
     const tokenCosts = calculatedTimelineSorted.map(d => d.token_cost);
     const savings = calculatedTimelineSorted.map(d => d.savings);
 
+    // "Breakdown by Model" toggle: when on and multiple models loaded
+    // (and no single-model filter), render one series per model instead of
+    // the aggregate line. Uses the per-model (ungrouped) timeline so each
+    // model's costs stay split by date.
+    const showPerModel = breakdownByModel && !selectedModel &&
+        loadedFiles.length > 1 && perModelTimeline.length > 0;
+
+    let costChartDatasets;
+    let costChartLabels = dates;
+
+    if (showPerModel) {
+        // Distinct models in insertion order.
+        const models = [];
+        perModelTimeline.forEach(d => {
+            const m = d.model || 'unknown';
+            if (!models.includes(m)) models.push(m);
+        });
+        // Build a color per model, cycling the accent palette then extra hues.
+        const palettes = [
+            chartColors.terracotta, chartColors.green, chartColors.emerald,
+            isDark ? '#64b5f6' : '#1976d2', // --accent-blue
+            isDark ? '#ffb74d' : '#e65100', // --accent-orange
+            '#9575cd', '#4db6ac', '#f06292', '#a1887f', '#7986cb'
+        ];
+        const colorFor = (i) => palettes[i % palettes.length];
+
+        // Sort each model's rows by date, matching the shared label axis.
+        const sortedPm = [...perModelTimeline].sort((a, b) => parseDateLocal(a.date) - parseDateLocal(b.date));
+        costChartDatasets = models.map((m, idx) => {
+            const byDate = {};
+            sortedPm.forEach(d => {
+                if ((d.model || 'unknown') !== m) return;
+                byDate[d.date] = (byDate[d.date] || 0) + (d.cost || 0);
+            });
+            const series = costChartLabels.map(dt => byDate[dt] !== undefined ? byDate[dt] : null);
+            const color = colorFor(idx);
+            return {
+                label: m,
+                data: series,
+                backgroundColor: color,
+                borderColor: color,
+                borderRadius: 4,
+                order: 2
+            };
+        });
+    } else {
+        costChartDatasets = [
+            {
+                label: 'Calculated Cost (USD)',
+                data: energyCosts,
+                backgroundColor: chartColors.terracotta,
+                borderColor: chartColors.terracotta,
+                borderRadius: 4,
+                order: 2
+            },
+            {
+                label: 'Token Comp. Cost (USD)',
+                data: tokenCosts,
+                type: 'line',
+                borderColor: chartColors.secondary,
+                borderWidth: 2,
+                borderDash: [5, 5],
+                pointBackgroundColor: chartColors.secondary,
+                fill: false,
+                order: 1
+            },
+            {
+                label: 'Estimated Savings (USD)',
+                data: savings,
+                type: 'line',
+                borderColor: chartColors.green,
+                borderWidth: 2,
+                pointBackgroundColor: chartColors.green,
+                backgroundColor: isDark ? 'rgba(129, 199, 132, 0.05)' : 'rgba(46, 125, 50, 0.05)',
+                fill: true,
+                order: 0
+            }
+        ];
+    }
+
     const ctx1 = document.getElementById('costSavingsChart').getContext('2d');
     costSavingsChart = new Chart(ctx1, {
         type: 'bar',
         data: {
-            labels: dates,
-            datasets: [
-                {
-                    label: 'Calculated Cost (USD)',
-                    data: energyCosts,
-                    backgroundColor: chartColors.terracotta,
-                    borderColor: chartColors.terracotta,
-                    borderRadius: 4,
-                    order: 2
-                },
-                {
-                    label: 'Token Comp. Cost (USD)',
-                    data: tokenCosts,
-                    type: 'line',
-                    borderColor: chartColors.secondary,
-                    borderWidth: 2,
-                    borderDash: [5, 5],
-                    pointBackgroundColor: chartColors.secondary,
-                    fill: false,
-                    order: 1
-                },
-                {
-                    label: 'Estimated Savings (USD)',
-                    data: savings,
-                    type: 'line',
-                    borderColor: chartColors.green,
-                    borderWidth: 2,
-                    pointBackgroundColor: chartColors.green,
-                    backgroundColor: isDark ? 'rgba(129, 199, 132, 0.05)' : 'rgba(46, 125, 50, 0.05)',
-                    fill: true,
-                    order: 0
-                }
-            ]
+            labels: costChartLabels,
+            datasets: costChartDatasets
         },
         options: {
             responsive: true,
@@ -1734,7 +2271,6 @@ function renderCharts() {
     });
 
     // Chart 2: Token Cache Performance
-    const totalTokens = calculatedTimelineSorted.map(d => d.tokens);
     const cachedTokens = calculatedTimelineSorted.map(d => d.cached_tokens || 0);
     const hitRates = calculatedTimelineSorted.map(d => d.tokens > 0 ? ((d.cached_tokens || 0) / d.tokens * 100) : 0);
 
@@ -1973,7 +2509,7 @@ function renderModelBreakdown() {
     });
 
     if (models.length === 0) {
-        modelPerformanceTbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-secondary">No models listed</td></tr>';
+        modelPerformanceTbody.innerHTML = '<tr><td colspan="9" data-label="Models" class="text-center py-4 text-secondary">No models listed</td></tr>';
         return;
     }
 
@@ -2050,7 +2586,7 @@ function renderModelBreakdown() {
             }
             const orModel = openRouterModels.find(x => x.id === activeRateModelId);
             if (orModel) {
-                compLabel = `<a href="https://openrouter.ai/${orModel.id}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-terracotta); text-decoration: underline;">${orModel.name}</a>`;
+                compLabel = `<a href="https://openrouter.ai/${escapeHtml(orModel.id)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-terracotta); text-decoration: underline;">${escapeHtml(orModel.name)}</a>`;
             } else {
                 compLabel = activeRateModelId;
             }
@@ -2072,36 +2608,36 @@ function renderModelBreakdown() {
 
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td>
-                <div class="model-perf-name">${m.model}</div>
+            <td data-label="Model">
+                <div class="model-perf-name">${escapeHtml(m.model)}</div>
                 ${m.is_third_party ? `
                 <span class="model-perf-badge badge-warning">
                     third party
                 </span>` : ''}
             </td>
-            <td>
+            <td data-label="Requests">
                 <div class="model-perf-details" style="font-weight:600;">
                     ${formatNumber(m.requests)}
                 </div>
             </td>
-            <td>
+            <td data-label="Tokens">
                 <div class="model-perf-details" style="font-weight:600;">
                     ${formatTokens(m.tokens)}
                 </div>
             </td>
-            <td>
+            <td data-label="Cache Rate">
                 <div class="model-perf-details" style="font-weight:600; font-size:0.9rem;">
                     ${cacheRate.toFixed(1)}%
                 </div>
             </td>
-            <td>
+            <td data-label="Token Breakdown">
                 <div class="model-perf-details">
                     Uncached In: <strong>${formatTokens(uncachedPrompt)}</strong><br>
                     Cached In: <strong>${formatTokens(cachedTokens)}</strong><br>
                     Out: <strong>${formatTokens(completionTokens)}</strong>
                 </div>
             </td>
-            <td>
+            <td data-label="Energy Cost">
                 <div class="model-perf-details" style="font-weight:600; font-size:0.9rem;">
                     ${formatCurrency(m.energyCost)}
                 </div>
@@ -2109,7 +2645,7 @@ function renderModelBreakdown() {
                     ${m.energy_kwh.toFixed(3)} kWh
                 </div>
             </td>
-            <td>
+            <td data-label="Unit Costs">
                 <div class="model-perf-details">
                     Cost/Req:<br>
                     • <strong>${formatCurrency(costPerRequest, 4)}</strong> Energy<br>
@@ -2119,14 +2655,14 @@ function renderModelBreakdown() {
                     • <strong>${formatCurrency(compareCostPerMtok, 4)}</strong> Token Comp.
                 </div>
             </td>
-            <td>
+            <td data-label="Token Comp. Details">
                 <div class="model-perf-details">
                     ${compHeading}<br><strong>${compLabel}</strong><br>
                     ${compBreakdown}
                     Total Token Comp.: <strong>${formatCurrency(m.compareCost)}</strong>
                 </div>
             </td>
-            <td>
+            <td data-label="Est. Savings">
                 <div class="model-perf-details ${m.savings > 0 ? 'savings-positive' : 'savings-neutral'}">
                     ${formatCurrency(m.savings)}
                 </div>
@@ -2139,6 +2675,147 @@ function renderModelBreakdown() {
     });
 }
 
+// MODEL COMPARISON VIEW
+// Side-by-side metrics for the loaded models (full date range), with the
+// best value in each row highlighted. Honors per-model selection checkboxes.
+let selectedComparisonModels = new Set();
+
+function renderComparison() {
+    const section = document.getElementById('comparison-section');
+    const thead = document.getElementById('model-comparison-thead');
+    const tbody = document.getElementById('model-comparison-tbody');
+    const togglesEl = document.getElementById('comparison-model-toggles');
+    if (!section || !thead || !tbody || !togglesEl) return;
+
+    // Only show when 2+ models are loaded.
+    if (loadedFiles.length < 2) {
+        section.style.display = 'none';
+        return;
+    }
+    section.style.display = 'block';
+
+    // Full-range per-model stats for an apples-to-apples comparison.
+    const allStats = buildModelStats(null, null);
+    const allModels = Object.values(allStats).map(m => m.model).sort((a, b) => a.localeCompare(b));
+
+    // Seed selection set with all models on first render.
+    if (selectedComparisonModels.size === 0) {
+        allModels.forEach(m => selectedComparisonModels.add(m));
+    }
+    // Drop any models no longer present (e.g. after a model was removed).
+    selectedComparisonModels.forEach(m => { if (!allModels.includes(m)) selectedComparisonModels.delete(m); });
+    // Ensure at least one selected; default back to all if selection cleared.
+    if (selectedComparisonModels.size === 0) {
+        allModels.forEach(m => selectedComparisonModels.add(m));
+    }
+
+    // Render model selection checkboxes.
+    togglesEl.innerHTML = '';
+    const toggleLabel = document.createElement('label');
+    toggleLabel.className = 'comparison-toggle-label';
+    toggleLabel.innerHTML = 'Compare:';
+    togglesEl.appendChild(toggleLabel);
+    allModels.forEach(m => {
+        const lbl = document.createElement('label');
+        lbl.className = 'comparison-toggle-chip';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = selectedComparisonModels.has(m);
+        cb.addEventListener('change', () => {
+            if (cb.checked) selectedComparisonModels.add(m);
+            else selectedComparisonModels.delete(m);
+            renderComparison();
+        });
+        lbl.appendChild(cb);
+        const span = document.createElement('span');
+        span.textContent = m;
+        lbl.appendChild(span);
+        togglesEl.appendChild(lbl);
+    });
+
+    const models = allModels.filter(m => selectedComparisonModels.has(m));
+    if (models.length === 0) {
+        thead.innerHTML = '';
+        tbody.innerHTML = '<tr><td style="padding:1rem; color: var(--text-secondary);">Select at least one model to compare.</td></tr>';
+        return;
+    }
+
+    // Build metric rows.
+    const metricRows = [
+        { key: 'requests', label: 'Requests', fmt: v => formatNumber(v), dir: 'high' },
+        { key: 'tokens', label: 'Total tokens', fmt: v => formatTokens(v), dir: 'high' },
+        { key: 'cacheRate', label: 'Cache hit rate', fmt: v => v.toFixed(1) + '%', dir: 'high' },
+        { key: 'energyCost', label: 'Energy cost', fmt: v => formatCurrency(v), dir: 'low' },
+        { key: 'costPerRequest', label: 'Cost per request', fmt: v => formatCurrency(v, 4), dir: 'low' },
+        { key: 'costPerMtok', label: 'Cost per Mtok', fmt: v => formatCurrency(v, 4), dir: 'low' },
+        { key: 'energyPerRequestMwh', label: 'Energy per request (mWh)', fmt: v => v.toFixed(2), dir: 'low' },
+        { key: 'savings', label: 'Est. savings', fmt: v => formatCurrency(v), dir: 'high' }
+    ];
+
+    const valuesByModel = {};
+    models.forEach(model => {
+        const s = allStats[model];
+        const cacheRate = s.tokens > 0 ? ((s.cached_tokens || 0) / s.tokens * 100) : 0;
+        const costPerRequest = s.requests > 0 ? (s.token_cost / s.requests) : 0;
+        const costPerMtok = s.tokens > 0 ? (s.token_cost / s.tokens * 1e6) : 0;
+        const energyPerRequestMwh = s.requests > 0 ? (s.energy_kwh * 1e6 / s.requests) : 0;
+        valuesByModel[model] = {
+            model,
+            requests: s.requests,
+            tokens: s.tokens,
+            cacheRate,
+            energyCost: s.cost,
+            costPerRequest,
+            costPerMtok,
+            energyPerRequestMwh,
+            savings: s.token_cost - s.cost
+        };
+    });
+
+    // Header row: Metric | Model A | Model B | ...
+    thead.innerHTML = '';
+    const hr = document.createElement('tr');
+    hr.innerHTML = '<th class="sortable" style="text-align:left;">Metric</th>' +
+        models.map(m => `<th class="comparison-model-col">${escapeHtml(m)}</th>`).join('');
+    thead.appendChild(hr);
+
+    tbody.innerHTML = '';
+    metricRows.forEach(row => {
+        // Determine best value (highlight).
+        let bestVal = null;
+        models.forEach(m => {
+            const val = valuesByModel[m][row.key];
+            if (bestVal === null) bestVal = val;
+            else if (row.dir === 'high' ? val > bestVal : val < bestVal) bestVal = val;
+        });
+        const tr = document.createElement('tr');
+        let html = `<td class="metric-name-cell">${escapeHtml(row.label)}</td>`;
+        models.forEach(m => {
+            const val = valuesByModel[m][row.key];
+            const isBest = (val === bestVal) && models.length > 1;
+            const cls = isBest ? 'comparison-best-cell' : '';
+            html += `<td class="${cls}">${escapeHtml(row.fmt(val))}</td>`;
+        });
+        tr.innerHTML = html;
+        tbody.appendChild(tr);
+    });
+}
+
+
+// Multi-field log search predicate shared by the logs table renderer and the
+// CSV subset export (Phase 2.2 contract: model / requests / tokens / energy
+// cost / token cost — case-insensitive substring on the formatted values).
+function matchesLogSearch(row, query) {
+    const q = query.toLowerCase();
+    return (
+        formatDateTable(row.dateStr || row.date).toLowerCase().includes(q) ||
+        (row.model && row.model.toLowerCase().includes(q)) ||
+        formatNumber(row.requests).toLowerCase().includes(q) ||
+        formatTokens(row.tokens).toLowerCase().includes(q) ||
+        formatCurrency(row.energy_cost).toLowerCase().includes(q) ||
+        formatCurrency(row.token_cost).toLowerCase().includes(q)
+    );
+}
 
 // LOGS TABLE RENDER
 function renderLogsTable() {
@@ -2147,6 +2824,7 @@ function renderLogsTable() {
         return {
             dateStr: d.date,
             dateObj: parseDateLocal(d.date),
+            model: d.model || '',
             requests: d.requests,
             tokens: d.tokens,
             cached: d.cached_tokens || 0,
@@ -2160,10 +2838,14 @@ function renderLogsTable() {
         };
     });
 
-    // Apply Search Filter
+    // Track pre-search total for screen-reader "showing X of Y" announcements.
+    const preSearchTotal = rows.length;
+    lastLogPreSearchTotal = preSearchTotal;
+    // Apply Search Filter across multiple fields (case-insensitive substring).
     if (currentSearchQuery) {
-        rows = rows.filter(r => formatDateTable(r.dateStr).toLowerCase().includes(currentSearchQuery.toLowerCase()));
+        rows = rows.filter(r => matchesLogSearch(r, currentSearchQuery));
     }
+    lastLogShownCount = rows.length;
 
     // Apply Sorting
     rows.sort((a, b) => {
@@ -2182,86 +2864,185 @@ function renderLogsTable() {
 
     logsTableBody.innerHTML = '';
     if (rows.length === 0) {
-        logsTableBody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 2rem; color: var(--text-secondary);">No logs match search criteria</td></tr>`;
+        lastLogShownCount = 0;
+        logsTableBody.innerHTML = `<tr><td colspan="11" data-label="Logs" style="text-align: center; padding: 2rem; color: var(--text-secondary);">No logs match search criteria</td></tr>`;
         return;
     }
+
+    // Show the Model column only when multiple models are loaded — when a
+    // single model is selected/filtered it would be repetitive.
+    const showModelCol = loadedFiles.length > 1;
+    document.querySelectorAll('#logs-table .log-model-col').forEach(el => {
+        el.style.display = showModelCol ? '' : 'none';
+    });
 
     rows.forEach(r => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td class="font-mono">${formatDateTable(r.dateStr)}</td>
-            <td>${formatNumber(r.requests)}</td>
-            <td>${formatTokens(r.tokens)}</td>
-            <td>${formatTokens(r.cached)}</td>
-            <td class="font-mono">${r.cache_rate.toFixed(1)}%</td>
-            <td class="font-mono">${formatCurrency(r.energy_cost)}</td>
-            <td class="font-mono">${formatCurrency(r.token_cost)}</td>
-            <td class="font-mono ${r.savings < 0 ? 'text-terracotta' : 'text-emerald'}" style="font-weight:600;">${formatCurrency(r.savings)}</td>
-            <td>${r.energy.toFixed(1)} Wh</td>
-            <td>${r.carbon.toFixed(1)} g</td>
+            <td class="font-mono" data-label="Time">${formatDateTable(r.date)}</td>
+            <td class="log-model-col" data-label="Model" style="display: ${showModelCol ? '' : 'none'};">${escapeHtml(r.model)}</td>
+            <td data-label="Requests">${formatNumber(r.requests)}</td>
+            <td data-label="Tokens">${formatTokens(r.tokens)}</td>
+            <td data-label="Cached Tokens">${formatTokens(r.cached)}</td>
+            <td class="font-mono" data-label="Cache Hit Rate">${r.cache_rate.toFixed(1)}%</td>
+            <td class="font-mono" data-label="Energy Cost">${formatCurrency(r.energy_cost)}</td>
+            <td class="font-mono" data-label="Token Cost">${formatCurrency(r.token_cost)}</td>
+            <td class="font-mono ${r.savings < 0 ? 'text-terracotta' : 'text-emerald'}" data-label="Est. Savings" style="font-weight:600;">${formatCurrency(r.savings)}</td>
+            <td data-label="Energy (Wh)">${r.energy.toFixed(1)} Wh</td>
+            <td data-label="Carbon (g)">${r.carbon.toFixed(1)} g</td>
         `;
         logsTableBody.appendChild(tr);
     });
 }
 
 // LOG SEARCH EVENT
+let lastLogPreSearchTotal = 0; // for sr-announcer "showing X of Y" messages
+let lastLogShownCount = 0;
 logSearchInput.addEventListener('input', (e) => {
     currentSearchQuery = e.target.value;
     renderLogsTable();
+    if (srAnnouncer) {
+        srAnnouncer.textContent = `Filter applied: showing ${lastLogShownCount} of ${lastLogPreSearchTotal} records`;
+    }
 });
 
-// LOG TABLE COLUMN SORTING
-logsTableHeaders.forEach(th => {
-    th.addEventListener('click', () => {
-        const column = th.getAttribute('data-sort');
-        
-        logsTableHeaders.forEach(header => {
-            if (header !== th) {
-                header.classList.remove('sorted-asc', 'sorted-desc');
-                header.querySelector('.sort-indicator').textContent = '';
-            }
-        });
-
-        if (currentSortColumn === column) {
-            currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            currentSortColumn = column;
-            currentSortDirection = 'desc';
+// BREAKDOWN-BY-MODEL CHART TOGGLE
+const breakdownToggle = document.getElementById('breakdown-by-model-toggle');
+const breakdownToggleRow = document.getElementById('breakdown-toggle-row');
+if (breakdownToggle) {
+    breakdownToggle.addEventListener('change', (e) => {
+        breakdownByModel = e.target.checked;
+        // When a single model is selected the toggle is meaningless (chart
+        // already shows that model) — force it off.
+        if (selectedModel) breakdownByModel = false;
+        updateCalculationsAndRender();
+        if (srAnnouncer) {
+            srAnnouncer.textContent = breakdownByModel
+                ? 'Chart breakdown by model enabled.'
+                : 'Chart breakdown by model disabled.';
         }
-
-        th.classList.remove('sorted-asc', 'sorted-desc');
-        th.classList.add(currentSortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
-        th.querySelector('.sort-indicator').textContent = currentSortDirection === 'asc' ? ' ↑' : ' ↓';
-
-        renderLogsTable();
     });
+}
+
+// Show the per-model toggle only when more than one model is loaded and no
+// single-model filter is active. Otherwise hide it and disable breakdown.
+function syncBreakdownToggle() {
+    if (!breakdownToggleRow) return;
+    if (loadedFiles.length > 1 && !selectedModel) {
+        breakdownToggleRow.style.display = '';
+        if (breakdownToggle) breakdownToggle.checked = breakdownByModel;
+    } else {
+        breakdownToggleRow.style.display = 'none';
+        breakdownByModel = false;
+        if (breakdownToggle) breakdownToggle.checked = false;
+    }
+}
+
+// Phase 3.1 — ARIA + keyboard support for sortable table headers.
+// All three sortable tables (logs, model performance, energy benchmark)
+// share these helpers: they make each <th> focusable, activate sorting
+// with Enter/Space, and keep aria-sort / aria-label in sync with the
+// current sort state.
+function getSortColumnLabel(th) {
+    const clone = th.cloneNode(true);
+    const indicator = clone.querySelector('.sort-indicator');
+    if (indicator) indicator.remove();
+    return (clone.textContent || '').trim();
+}
+
+function updateSortAria(th, headers, direction) {
+    headers.forEach(header => {
+        header.setAttribute('aria-sort', header === th ? (direction === 'asc' ? 'ascending' : 'descending') : 'none');
+    });
+    const label = getSortColumnLabel(th);
+    th.setAttribute('aria-label', `${label}, sorted ${direction === 'asc' ? 'ascending' : 'descending'}`);
+}
+
+function makeSortableHeader(th, onSort) {
+    th.setAttribute('role', 'button');
+    th.tabIndex = 0;
+    // Initialize aria-sort / aria-label from the initial sorted-asc/sorted-desc
+    // classes in the markup so the ARIA state matches the visible sort on load.
+    let initialDirection = 'none';
+    if (th.classList.contains('sorted-asc')) initialDirection = 'ascending';
+    else if (th.classList.contains('sorted-desc')) initialDirection = 'descending';
+    th.setAttribute('aria-sort', initialDirection);
+    const label = getSortColumnLabel(th);
+    if (initialDirection !== 'none') {
+        th.setAttribute('aria-label', `${label}, sorted ${initialDirection}`);
+    } else {
+        // Unsorted headers still get a descriptive label ("Sort by X").
+        th.setAttribute('aria-label', `Sort by ${label}`);
+    }
+    th.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSort();
+        }
+    });
+    // Click activation lives here too so keydown and click can never
+    // double-fire the sort (single handler source of truth).
+    th.addEventListener('click', onSort);
+}
+
+// LOG TABLE COLUMN SORTING
+function handleLogsTableSort(th) {
+    const column = th.getAttribute('data-sort');
+
+    logsTableHeaders.forEach(header => {
+        if (header !== th) {
+            header.classList.remove('sorted-asc', 'sorted-desc');
+            header.querySelector('.sort-indicator').textContent = '';
+        }
+    });
+
+    if (currentSortColumn === column) {
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortColumn = column;
+        currentSortDirection = 'desc';
+    }
+
+    th.classList.remove('sorted-asc', 'sorted-desc');
+    th.classList.add(currentSortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    th.querySelector('.sort-indicator').textContent = currentSortDirection === 'asc' ? ' ↑' : ' ↓';
+
+    updateSortAria(th, logsTableHeaders, currentSortDirection);
+    renderLogsTable();
+}
+
+logsTableHeaders.forEach(th => {
+    makeSortableHeader(th, () => handleLogsTableSort(th));
 });
 
 // MODEL PERFORMANCE TABLE COLUMN SORTING
-modelTableHeaders.forEach(th => {
-    th.addEventListener('click', () => {
-        const column = th.getAttribute('data-sort');
-        
-        modelTableHeaders.forEach(header => {
-            if (header !== th) {
-                header.classList.remove('sorted-asc', 'sorted-desc');
-                header.querySelector('.sort-indicator').textContent = '';
-            }
-        });
+function handleModelTableSort(th) {
+    const column = th.getAttribute('data-sort');
 
-        if (modelSortColumn === column) {
-            modelSortDirection = modelSortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            modelSortColumn = column;
-            modelSortDirection = 'desc';
+    modelTableHeaders.forEach(header => {
+        if (header !== th) {
+            header.classList.remove('sorted-asc', 'sorted-desc');
+            header.querySelector('.sort-indicator').textContent = '';
         }
-
-        th.classList.remove('sorted-asc', 'sorted-desc');
-        th.classList.add(modelSortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
-        th.querySelector('.sort-indicator').textContent = modelSortDirection === 'asc' ? ' ↑' : ' ↓';
-
-        renderModelBreakdown();
     });
+
+    if (modelSortColumn === column) {
+        modelSortDirection = modelSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        modelSortColumn = column;
+        modelSortDirection = 'desc';
+    }
+
+    th.classList.remove('sorted-asc', 'sorted-desc');
+    th.classList.add(modelSortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    th.querySelector('.sort-indicator').textContent = modelSortDirection === 'asc' ? ' ↑' : ' ↓';
+
+    updateSortAria(th, modelTableHeaders, modelSortDirection);
+    renderModelBreakdown();
+}
+
+modelTableHeaders.forEach(th => {
+    makeSortableHeader(th, () => handleModelTableSort(th));
 });
 
 // CSV SUBSET EXPORT
@@ -2272,6 +3053,7 @@ btnExportCsvSubset.addEventListener('click', () => {
         const cacheRate = d.tokens > 0 ? ((d.cached_tokens || 0) / d.tokens * 100) : 0;
         return {
             date: d.date,
+            model: d.model || '',
             requests: d.requests,
             tokens: d.tokens,
             cached: d.cached_tokens || 0,
@@ -2285,7 +3067,7 @@ btnExportCsvSubset.addEventListener('click', () => {
     });
 
     if (currentSearchQuery) {
-        rows = rows.filter(r => formatDateTable(r.date).toLowerCase().includes(currentSearchQuery.toLowerCase()));
+        rows = rows.filter(r => matchesLogSearch(r, currentSearchQuery));
     }
 
     rows.sort((a, b) => {
@@ -2376,7 +3158,7 @@ function renderEnergyInsights() {
 
     // Initial Idle State before fetch
     if (!liveEnergyPricingLoaded && !liveEnergyPricingFetching && !liveEnergyPricingError) {
-        energyBenchmarkTbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-secondary);">
+        energyBenchmarkTbody.innerHTML = `<tr><td colspan="9" data-label="Live Energy" style="text-align: center; padding: 2.5rem; color: var(--text-secondary);">
             <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--text-primary);">⚡ Live Energy Telemetry Ready</div>
             <div style="font-size: 0.85rem; margin-bottom: 1rem; color: var(--text-secondary);">Import a JSON export above or click below to fetch live energy telemetry from portal.neuralwatt.com.</div>
             <button type="button" class="btn btn-primary btn-sm" id="btn-fetch-live-energy">⚡ Fetch Live Energy Telemetry</button>
@@ -2400,7 +3182,7 @@ function renderEnergyInsights() {
 
     // Handle Loading State
     if (liveEnergyPricingFetching && !liveEnergyPricingLoaded) {
-        energyBenchmarkTbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-secondary);">⚡ Fetching live energy telemetry from portal.neuralwatt.com...</td></tr>`;
+        energyBenchmarkTbody.innerHTML = `<tr><td colspan="9" data-label="Live Energy" style="text-align: center; padding: 2.5rem; color: var(--text-secondary);">⚡ Fetching live energy telemetry from portal.neuralwatt.com...</td></tr>`;
         valEnergyWeightedAvg.textContent = '- mWh';
         valEnergyWeightedSub.textContent = 'Syncing live telemetry...';
         valMostEfficientModel.textContent = '-';
@@ -2414,7 +3196,7 @@ function renderEnergyInsights() {
 
     // Handle Fetch Failure / Error State
     if (liveEnergyPricingError || !liveEnergyPricingLoaded || NEURALWATT_ENERGY_BENCHMARKS.length === 0) {
-        energyBenchmarkTbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--accent-terracotta); font-weight: 500;">
+        energyBenchmarkTbody.innerHTML = `<tr><td colspan="9" data-label="Live Energy" style="text-align: center; padding: 2.5rem; color: var(--accent-terracotta); font-weight: 500;">
             <div style="margin-bottom: 0.75rem;">⚠️ Live energy pricing telemetry could not be fetched from portal.neuralwatt.com.</div>
             <button type="button" class="btn btn-secondary btn-sm" id="btn-retry-live-energy">↻ Retry Fetching Live Telemetry</button>
         </td></tr>`;
@@ -2543,10 +3325,10 @@ function renderEnergyInsights() {
         }
 
         let cellsHtml = `
-            <td class="font-mono" style="white-space: nowrap;">
-                ${isActive ? '<span class="terracotta-dot">★ </span>' : ''}<strong>${item.model}</strong>
+            <td class="font-mono" data-label="Model" style="white-space: nowrap;">
+                ${isActive ? '<span class="terracotta-dot">★ </span>' : ''}<strong>${escapeHtml(item.model)}</strong>
             </td>
-            <td class="weighted-col-cell font-mono text-terracotta" style="white-space: nowrap;">
+            <td class="weighted-col-cell font-mono text-terracotta" data-label="Weighted Energy/Req" style="white-space: nowrap;">
                 ${item.weightedMwh.toFixed(1)} mWh
                 <div class="energy-cell-sub">Top band: ${item.dominantBand} (${item.maxPct}%)</div>
             </td>
@@ -2554,12 +3336,12 @@ function renderEnergyInsights() {
 
         item.bands.forEach(b => {
             if (b.mwh === null) {
-                cellsHtml += `<td style="text-align: right; color: var(--text-secondary); opacity: 0.5;" title="Too few measured requests in this size band">—</td>`;
+                cellsHtml += `<td data-label="${escapeHtml(b.band)}" style="text-align: right; color: var(--text-secondary); opacity: 0.5;" title="Too few measured requests in this size band">—</td>`;
             } else {
                 const titleTooltip = `Average energy over real traffic. Measured at a ${b.cache_hit_pct !== null ? b.cache_hit_pct + '%' : '0%'} avg cache-hit rate in this size band. ${b.req_pct}% of total telemetry requests.`;
                 cellsHtml += `
-                    <td style="text-align: right;" title="${titleTooltip}">
-                        <div class="energy-cell-primary">${b.display}</div>
+                    <td data-label="${escapeHtml(b.band)}" style="text-align: right;" title="${escapeHtml(titleTooltip)}">
+                        <div class="energy-cell-primary">${escapeHtml(b.display)}</div>
                         <div class="energy-cell-sub">${b.req_pct}% reqs</div>
                     </td>
                 `;
@@ -2577,11 +3359,11 @@ function renderEnergyInsights() {
         sortedData.forEach(item => {
             const tr = document.createElement('tr');
             let cellsHtml = `
-                <td class="font-mono" style="white-space: nowrap;"><strong>${item.model}</strong></td>
+                <td class="font-mono" style="white-space: nowrap;"><strong>${escapeHtml(item.model)}</strong></td>
                 <td class="weighted-col-cell font-mono text-terracotta" style="white-space: nowrap;">${item.weightedMwh.toFixed(1)} mWh</td>
             `;
             item.bands.forEach(b => {
-                cellsHtml += `<td style="text-align: right;">${b.mwh === null ? '—' : b.display}</td>`;
+                cellsHtml += `<td style="text-align: right;">${b.mwh === null ? '—' : escapeHtml(b.display)}</td>`;
             });
             tr.innerHTML = cellsHtml;
             landingTbody.appendChild(tr);
@@ -2603,13 +3385,32 @@ function renderEnergyInsightsChart(data, activeModelEntry) {
         energyInsightsChart = null;
     }
 
-    if (typeof Chart === 'undefined') return;
+    // Guard: Chart.js CDN unavailable. Show a styled placeholder inside the
+    // chart's container instead of returning silently. Use textContent.
+    if (typeof Chart === 'undefined') {
+        const container = canvas.parentElement;
+        if (container) {
+            container.style.display = 'flex';
+            container.style.alignItems = 'center';
+            container.style.justifyContent = 'center';
+            container.style.minHeight = '200px';
+            const msg = document.createElement('div');
+            msg.className = 'chart-unavailable-placeholder';
+            msg.textContent = 'Charts unavailable — Chart.js CDN could not be loaded (check network connection).';
+            container.innerHTML = '';
+            container.appendChild(msg);
+        }
+        return;
+    }
 
     const isDarkMode = bodyEl.classList.contains('dark-mode');
-    const textColor = isDarkMode ? '#9BAA95' : '#858458';
+    // Chart.js colors resolved to concrete hexes (Chart.js cannot consume
+    // `var(--…)`). Keep in sync with :root / .dark-mode values for the
+    // corresponding --accent-* / --text-secondary variables.
+    const textColor = isDarkMode ? '#9BAA95' : '#858458';      // --text-secondary
     const gridColor = isDarkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
-    const primaryBarColor = isDarkMode ? '#2dd4bf' : '#0f766e';
-    const activeBarColor = isDarkMode ? '#E86C45' : '#D55934';
+    const primaryBarColor = isDarkMode ? '#2dd4bf' : '#0f766e'; // --accent-emerald
+    const activeBarColor = isDarkMode ? '#E86C45' : '#D55934'; // --accent-terracotta
 
     const labels = data.map(d => d.model);
     const chartValues = data.map(d => parseFloat(d.weightedMwh.toFixed(1)));
@@ -2854,6 +3655,7 @@ async function fetchLiveEnergyPricing() {
                     }
                     updateBadge('live', new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
                     renderEnergyInsights();
+                    if (srAnnouncer) srAnnouncer.textContent = 'Live energy data: synced.';
                     return;
                 }
             }
@@ -2868,8 +3670,10 @@ async function fetchLiveEnergyPricing() {
     NEURALWATT_ENERGY_BENCHMARKS.length = 0;
     updateBadge('error');
     renderEnergyInsights();
+    if (srAnnouncer) srAnnouncer.textContent = 'Live energy data: failed. Using built-in fallback benchmarks.';
 }
 
 // START BACKGROUND LOAD FOR OPENROUTER AND NEURALWATT POSTED RATES
 fetchOpenRouterModels();
 fetchNeuralwattPricing();
+loadExternalPricingTables();

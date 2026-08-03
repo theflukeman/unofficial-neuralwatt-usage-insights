@@ -16,8 +16,11 @@
     <!-- CSS File -->
     <link rel="stylesheet" href="index.css">
     
-    <!-- Chart.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Chart.js — local vendored copy first (offline resilience), CDN as fallback.
+         Phase 4.3: vendor/chart.umd.min.js is the committed offline copy; the
+         inline fallback loads the CDN build only if the vendor file is missing. -->
+    <script src="vendor/chart.umd.min.js"></script>
+    <script>window.Chart || document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"><\/script>')</script>
 </head>
 <body class="dark-mode"> <!-- Default to Dark Mode for premium aesthetic -->
     <div class="app-container">
@@ -74,6 +77,9 @@
             </div>
             <ul class="import-error-list"></ul>
         </div>
+
+        <!-- Screen-reader-only live announcer for dynamic state changes -->
+        <div id="sr-announcer" aria-live="polite" class="sr-only"></div>
 
         <!-- Main Dashboard Container (Always Visible) -->
         <main class="dashboard-content" id="dashboard-container">
@@ -192,6 +198,17 @@
                             <label for="end-date-filter">End Date</label>
                             <input type="date" id="end-date-filter" class="control-input" style="width: 140px; cursor: pointer; font-family: var(--font-body);">
                         </div>
+
+                        <div class="control-group">
+                            <label for="quick-range-select">Quick Range</label>
+                            <select id="quick-range-select" class="control-select">
+                                <option value="custom">Custom</option>
+                                <option value="7">Last 7 periods</option>
+                                <option value="14">Last 14 periods</option>
+                                <option value="30">Last 30 periods</option>
+                                <option value="full">Full range</option>
+                            </select>
+                        </div>
                         
                         <div class="control-group">
                             <label for="cost-calc-mode">Energy Cost Base</label>
@@ -252,6 +269,14 @@
                         <div class="methodology-note">
                             <strong>Methodology Note:</strong> Daily exports only contain total and cached token counts; the detailed split (input vs. output) is only provided as an aggregate for the entire period. Day-level splits are estimated by applying the overall period's prompt/completion ratio to each day's total tokens.
                         </div>
+
+                        <!-- Phase 3.5 — visible, non-blocking feedback when live
+                             Neuralwatt pricing could not be fetched. Hidden by
+                             default; shown via JS when the live fetch fails. -->
+                        <div id="neuralwatt-pricing-status" class="pricing-status-badge" style="display: none;"
+                             title="Live Neuralwatt pricing could not be fetched from api.neuralwatt.com. Using the built-in rate tables — rates may be out of date. This does not affect your data.">
+                            <span class="offline-dot">✕</span> Live Neuralwatt pricing unavailable — using built-in rate tables
+                        </div>
                     </div>
 
                     <div class="controls-right">
@@ -260,6 +285,9 @@
                             <div id="imported-models-list" class="imported-models-list">
                                 <!-- Populated by JS -->
                             </div>
+                            <button type="button" id="clear-session-btn" class="btn btn-secondary btn-sm" style="margin-top: 0.75rem; align-self: flex-start;">
+                                Clear Session
+                            </button>
                         </div>
                     </div>
                 </section>
@@ -375,6 +403,12 @@
                     <!-- Cost & Savings Progression -->
                     <div class="chart-card">
                         <h3 id="chart-cost-title">Cost & Est. Savings Progression</h3>
+                        <div class="chart-toggle-row" id="breakdown-toggle-row" style="display: none; margin-bottom: 0.5rem;">
+                            <label class="chart-toggle-label">
+                                <input type="checkbox" id="breakdown-by-model-toggle">
+                                Breakdown by Model
+                            </label>
+                        </div>
                         <div class="chart-container">
                             <canvas id="costSavingsChart"></canvas>
                         </div>
@@ -425,12 +459,28 @@
                     </div>
                 </div>
 
+                <!-- Model Comparison Section (shown when 2+ models loaded) -->
+                <section class="comparison-section" id="comparison-section" style="display: none;">
+                    <div class="logs-header">
+                        <h2>Model Comparison</h2>
+                        <div class="logs-actions">
+                            <div id="comparison-model-toggles" class="comparison-model-toggles"></div>
+                        </div>
+                    </div>
+                    <div class="table-container comparison-table-container">
+                        <table class="logs-table" id="model-comparison-table">
+                            <thead id="model-comparison-thead"></thead>
+                            <tbody id="model-comparison-tbody"></tbody>
+                        </table>
+                    </div>
+                </section>
+
                 <!-- Granular Logs Section -->
                 <section class="logs-section" id="logs-container">
                     <div class="logs-header">
                         <h2 id="table-logs-title">Granular Logs</h2>
                         <div class="logs-actions">
-                            <input type="text" id="log-search-input" placeholder="Search by date..." class="search-input">
+                            <input type="text" id="log-search-input" placeholder="Search logs..." class="search-input">
                             <button class="btn btn-secondary btn-sm" id="btn-export-csv-subset">
                                 Export Current View (CSV)
                             </button>
@@ -442,6 +492,7 @@
                             <thead>
                                 <tr>
                                     <th data-sort="date" class="sortable sorted-desc">Time <span class="sort-indicator">↓</span></th>
+                                    <th data-sort="model" class="sortable log-model-col" style="display: none;">Model <span class="sort-indicator"></span></th>
                                     <th data-sort="requests" class="sortable">Requests <span class="sort-indicator"></span></th>
                                     <th data-sort="tokens" class="sortable">Tokens <span class="sort-indicator"></span></th>
                                     <th data-sort="cached" class="sortable">Cached Tokens <span class="sort-indicator"></span></th>

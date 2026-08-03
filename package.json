@@ -1,0 +1,14 @@
+{
+  "name": "unofficial-neuralwatt-usage-insights",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dev-only tooling for the unofficial Neuralwatt usage dashboard. The runtime is a zero-build static site — this package only adds test/lint tooling.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "lint": "eslint app.js lib/ tests/ eslint.config.js"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0"
+  }
+}

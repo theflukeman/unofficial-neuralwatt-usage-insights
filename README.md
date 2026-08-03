@@ -28,7 +28,16 @@ table — with energy/cost/savings and carbon-footprint projections.
   (auto-match against OpenRouter live prices or custom `$/Mtok` rates).
 - **Granular logs** — sortable, searchable per-cycle table with CSV export of the
   current view.
-- **Light / Dark theme** toggle (defaults to dark). Fully responsive.
+- **Model comparison** — side-by-side view of loaded models' key metrics with
+  best-value highlighting, plus a per-model trend chart toggle.
+- **Session persistence** — imported data and filter state survive page reloads
+  (`localStorage`, key `neuralwatt_session_v1`); "Clear Session" resets everything.
+- **Light / Dark theme** — follows your OS `prefers-color-scheme` on first visit,
+  with a manual toggle that locks in your choice. Fully responsive (tables stack
+  into cards on small screens).
+- **Accessibility** — keyboard-sortable table headers (`role="button"`, Enter/Space),
+  `aria-sort` state, and screen-reader announcements for imports, filters, and
+  live-data syncs.
 - **Privacy** — all parsing and computation happen in the browser. No data is uploaded
   to any server.
 
@@ -76,17 +85,40 @@ Then visit `http://localhost:8000`.
 index.html   # Markup, CDN includes (Chart.js, Google Fonts)
 index.css    # Theming via CSS variables + layout/components
 app.js       # All app logic (file parsing, aggregation, rendering, charts)
+data/        # Editable pricing tables (neuralwatt-pricing.json, provider-pricing.json)
+vendor/      # Vendored Chart.js (offline-capable, with CDN fallback)
+lib/         # Dev-only pure-logic mirrors for unit tests (see AGENTS.md)
+tests/       # Unit tests (node:test, no runtime deps)
 ```
 
 > **Note:** `app.js` is a single ~1.5k-line vanilla-JS file. There is no module
 > system or bundler. See `AGENTS.md` for conventions when editing it.
+>
+> The pricing tables in `data/` are fetched at load time; if that fetch fails
+> (e.g. opening `index.html` directly via `file://`), the built-in copies in
+> `app.js` are used automatically, so behavior is unchanged.
 
 ## Tech
 
 - Vanilla JavaScript (no framework, no bundler)
 - CSS variables for theming
-- [Chart.js 4](https://www.chartjs.org/) (via CDN)
+- [Chart.js 4](https://www.chartjs.org/) — vendored in `vendor/` with a CDN fallback
 - Google Fonts: Inter, Outfit, JetBrains Mono
+
+## Development
+
+The runtime is zero-build; the following are **dev-only** tools for contributors
+and do not affect the static site:
+
+```bash
+npm install      # dev tooling (ESLint only; tests use node:test, no deps)
+npm test         # unit tests for lib/ mirrors (escapeHtml, validateUsageData,
+                 # getCalculatedCosts, clampFinite, date helpers)
+npm run lint     # ESLint over app.js, lib/, tests/
+```
+
+`lib/` holds pure mirrors of `app.js` logic so tests can import them without a
+DOM. `app.js` is the runtime source of truth — keep the mirrors in sync.
 
 ## License
 
