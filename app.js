@@ -1054,7 +1054,10 @@ function compileMergedData() {
         // Hourly exports may omit the `daily` key entirely, and restored
         // sessions bypass the handleFilesSelection daily=hourly
         // normalization — consume whichever row array the export carries.
-        const rowArray = fd.daily || fd.hourly || [];
+        // An empty-but-present `daily: []` must not shadow a non-empty
+        // `hourly` array (empty arrays are truthy).
+        const rowArray = (Array.isArray(fd.daily) && fd.daily.length > 0) ? fd.daily
+            : ((Array.isArray(fd.hourly) && fd.hourly.length > 0) ? fd.hourly : []);
         rowArray.forEach(d => {
             rawData.daily.push({
                 ...d,
@@ -1260,7 +1263,7 @@ function validateUsageData(data) {
     if (!hasMarker && !arrayFound) {
         errors.push('Unrecognized JSON: not a Neuralwatt usage export (no totals/by_model/period and no timeseries array).');
     } else if (!arrayFound && errors.length === 0) {
-        errors.push('No timeseries data found (daily, hourly, rows, by_model, or usage).');
+        errors.push('No timeseries data found (daily, hourly, or by_model).');
     }
 
     return { valid: errors.length === 0, errors };
@@ -1730,11 +1733,20 @@ function updateCalculationsAndRender() {
         const models = Object.values(modelStats);
         if (models.length > 0) {
             models.forEach(m => {
+                // Use each model's own prompt/completion totals so the
+                // summary compare cost is estimated with the same per-model
+                // ratio as the timeline, breakdown, and comparison. Passing
+                // the aggregate totals here made the summary card disagree
+                // with the sum of the per-model rows for multi-model imports
+                // with differing completion ratios.
+                const origModel = rawData.by_model.find(x => x.model === m.model);
+                const refPrompt = origModel ? origModel.prompt_tokens : basePromptTokens;
+                const refCompletion = origModel ? origModel.completion_tokens : baseCompletionTokens;
                 const modelCosts = getCalculatedCosts(
                     m.tokens,
                     m.cached_tokens || 0,
-                    basePromptTokens,
-                    baseCompletionTokens,
+                    refPrompt,
+                    refCompletion,
                     m.energy_kwh,
                     m.cost,
                     m.token_cost || 0,
@@ -2392,7 +2404,7 @@ function renderCharts() {
     const cachedTokens = calculatedTimelineSorted.map(d => d.cached_tokens || 0);
     const promptTokens = calculatedTimelineSorted.map(d => d.prompt_tokens || d.tokens || 0);
     const uncachedPromptTokens = promptTokens.map((p, i) => Math.max(0, p - (cachedTokens[i] || 0)));
-    const hitRates = promptTokens.map((p, i) => p > 0 ? ((cachedTokens[i] || 0) / p * 100) : 0);
+    const hitRates = promptTokens.map((p, i) => p > 0 ? Math.min(100, (cachedTokens[i] || 0) / p * 100) : 0);
 
     const ctx2 = document.getElementById('cachePerformanceChart').getContext('2d');
     cachePerformanceChart = new Chart(ctx2, {

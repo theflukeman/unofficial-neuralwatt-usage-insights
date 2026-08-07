@@ -275,12 +275,12 @@ test('getCalculatedCosts computes compare cost from Neuralwatt pricing', () => {
         {
             kwhRate: null,
             compareRateId: 'neuralwatt-pricing',
-            neuralwattPricing: { prompt: 1.45, cache: 0.36, completion: 4.50 }
+            neuralwattPricing: { prompt: 1.45, cache: 0.145, completion: 4.50 }
         }
     );
     // uncachedPrompt=300, cached=500, completion=200
-    // = 300*1.45e-6 + 500*0.36e-6 + 200*4.5e-6 = 0.000435 + 0.00018 + 0.0009 = 0.001515
-    assert.ok(Math.abs(r.compareCost - 0.001515) < 1e-12);
+    // = 300*1.45e-6 + 500*0.145e-6 + 200*4.5e-6 = 0.000435 + 0.0000725 + 0.0009 = 0.0014075
+    assert.ok(Math.abs(r.compareCost - 0.0014075) < 1e-12);
 });
 
 test('getCalculatedCosts computes savings and savingsPct', () => {
