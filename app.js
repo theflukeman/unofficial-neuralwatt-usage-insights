@@ -2845,19 +2845,36 @@ function renderComparison() {
         const origModel = rawData.by_model.find(x => x.model === model);
         const split = estimateTokenSplit(s.tokens || 0, origModel ? origModel.prompt_tokens : 0, origModel ? origModel.completion_tokens : 0);
         const cacheRate = split.promptTokens > 0 ? ((s.cached_tokens || 0) / split.promptTokens * 100) : 0;
-        const costPerRequest = s.requests > 0 ? (s.token_cost / s.requests) : 0;
-        const costPerMtok = s.tokens > 0 ? (s.token_cost / s.tokens * 1e6) : 0;
+
+        // Cost rows honor the selected Energy Cost Base and Token Compare
+        // Rate, matching the summary cards / breakdown / charts. Previously
+        // the raw JSON cost/token_cost were shown, so the comparison table
+        // disagreed with every other panel as soon as a rate mode or plan
+        // was selected (and its 'Cost per request' used the token cost).
+        const modelCosts = getCalculatedCosts(
+            s.tokens,
+            s.cached_tokens || 0,
+            split.promptTokens,
+            split.completionTokens,
+            s.energy_kwh,
+            s.cost,
+            s.token_cost || 0,
+            s.third_party_cost || 0,
+            model
+        );
+        const costPerRequest = s.requests > 0 ? (modelCosts.energyCost / s.requests) : 0;
+        const costPerMtok = s.tokens > 0 ? (modelCosts.energyCost / s.tokens * 1e6) : 0;
         const energyPerRequestMwh = s.requests > 0 ? (s.energy_kwh * 1e6 / s.requests) : 0;
         valuesByModel[model] = {
             model,
             requests: s.requests,
             tokens: s.tokens,
             cacheRate,
-            energyCost: s.cost,
+            energyCost: modelCosts.energyCost,
             costPerRequest,
             costPerMtok,
             energyPerRequestMwh,
-            savings: s.token_cost - s.cost
+            savings: modelCosts.savings
         };
     });
 
