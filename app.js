@@ -886,14 +886,6 @@ function handleFilesSelection(filesList) {
             try {
                 compileMergedData();
 
-                if (selectedModel === '') {
-                    costCalcMode = 'flat-10';
-                    costCalcModeSelect.value = 'flat-10';
-                    customRateContainer.style.display = 'none';
-                    thirdPartyCompareRate = 'auto-match';
-                    thirdPartyProviderSelect.value = 'auto-match';
-                }
-
                 if (!liveEnergyPricingLoaded && !liveEnergyPricingFetching) {
                     fetchLiveEnergyPricing();
                 }
