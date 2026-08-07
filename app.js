@@ -2532,11 +2532,16 @@ function renderModelBreakdown() {
 
         const cacheRate = modelPrompt > 0 ? ((m.cached_tokens || 0) / modelPrompt * 100) : 0;
         
+        // Pass the model's own prompt/completion totals so the compare cost
+        // is estimated with the same per-model ratio used for the displayed
+        // token split. Previously the aggregate (all-models) totals were
+        // passed here, which skewed each model's compare cost and savings
+        // whenever completion ratios differed across models.
         const modelCosts = getCalculatedCosts(
             m.tokens,
             m.cached_tokens || 0,
-            calculatedTotals.prompt_tokens,
-            calculatedTotals.completion_tokens,
+            modelPrompt,
+            modelCompletion,
             m.energy_kwh,
             m.cost,
             m.token_cost || 0,
