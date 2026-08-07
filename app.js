@@ -3366,9 +3366,13 @@ function renderEnergyInsights() {
     });
 
     // 3. Find Most Efficient Model
-    let mostEfficient = benchmarkData[0];
+    // Only entries with real (positive) weighted data qualify — a model whose
+    // bands are all null / zero-request must not be reported as "most
+    // efficient" at 0.0 mWh (previously the first entry was the seed, so an
+    // empty first row was never replaced).
+    let mostEfficient = null;
     benchmarkData.forEach(b => {
-        if (b.weightedMwh > 0 && b.weightedMwh < mostEfficient.weightedMwh) {
+        if (b.weightedMwh > 0 && (mostEfficient === null || b.weightedMwh < mostEfficient.weightedMwh)) {
             mostEfficient = b;
         }
     });
