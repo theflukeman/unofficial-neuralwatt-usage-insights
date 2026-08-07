@@ -971,7 +971,10 @@ function compileMergedData() {
         available_models: [],
         available_keys: [],
         accounting_method: firstData.accounting_method || 'energy',
-        granularity: firstData.granularity || 'daily'
+        // Derive granularity from the actual row shape when the export omits
+        // the field, so an hourly-only export is not mislabeled "Daily".
+        granularity: firstData.granularity ||
+            ((Array.isArray(firstData.hourly) && firstData.hourly.length > 0) ? 'hourly' : 'daily')
     };
     
     const uniqueKeysMap = new Map();
@@ -1048,14 +1051,16 @@ function compileMergedData() {
         }
         
         const modelName = f.modelName;
-        if (fd.daily) {
-            fd.daily.forEach(d => {
-                rawData.daily.push({
-                    ...d,
-                    model: modelName
-                });
+        // Hourly exports may omit the `daily` key entirely, and restored
+        // sessions bypass the handleFilesSelection daily=hourly
+        // normalization — consume whichever row array the export carries.
+        const rowArray = fd.daily || fd.hourly || [];
+        rowArray.forEach(d => {
+            rawData.daily.push({
+                ...d,
+                model: modelName
             });
-        }
+        });
     });
     
     rawData.available_keys = Array.from(uniqueKeysMap.values());
@@ -1186,8 +1191,11 @@ function validateUsageData(data) {
         }
     }
 
-    // Require at least one non-empty timeseries array.
-    const arrayFields = ['daily', 'hourly', 'rows', 'by_model', 'usage'];
+    // Require at least one non-empty timeseries array the merge engine can
+    // actually consume (daily / hourly / by_model). 'rows' and 'usage' are
+    // known export shapes the engine does not read — a file relying on them
+    // must fail loudly here instead of importing with an empty timeline.
+    const arrayFields = ['daily', 'hourly', 'by_model'];
     let arrayFound = false;
     for (const f of arrayFields) {
         if (data[f] !== undefined) {
@@ -1200,6 +1208,22 @@ function validateUsageData(data) {
             }
         }
     }
+
+    // Unsupported timeseries shapes: only reject when the export relies on
+    // them (i.e. no usable daily/hourly rows), so a redundant extra field on
+    // an otherwise valid export does not fail the import.
+    const hasUsableRows = (Array.isArray(data.daily) && data.daily.length > 0) ||
+        (Array.isArray(data.hourly) && data.hourly.length > 0);
+    ['rows', 'usage'].forEach(f => {
+        if (data[f] === undefined || hasUsableRows) return;
+        if (!Array.isArray(data[f])) {
+            errors.push(`Field "${f}" must be an array.`);
+        } else if (data[f].length === 0) {
+            errors.push(`Field "${f}" is an empty array; no timeseries data present.`);
+        } else {
+            errors.push(`Field "${f}" is not supported by this tool — expected "daily" or "hourly" rows.`);
+        }
+    });
 
     // by_model entries must each have a model string field.
     if (Array.isArray(data.by_model) && data.by_model.length > 0) {

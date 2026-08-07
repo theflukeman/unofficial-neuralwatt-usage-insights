@@ -144,6 +144,39 @@ test('validateUsageData rejects unrecognized JSON with no markers', () => {
     assert.ok(result.errors.some(e => e.includes('Unrecognized JSON')));
 });
 
+test('validateUsageData rejects rows-only exports (engine cannot consume them)', () => {
+    // The merge engine only reads daily/hourly; a file that relies on `rows`
+    // must fail loudly instead of importing with an empty timeline.
+    const result = validateUsageData({ totals: {}, by_model: [{ model: 'x' }], rows: [{ date: '2026-07-01', requests: 1 }] });
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('rows') && e.includes('not supported')),
+        `expected unsupported-rows error, got: ${JSON.stringify(result.errors)}`);
+});
+
+test('validateUsageData rejects usage-only exports with a clear message', () => {
+    const result = validateUsageData({ totals: {}, by_model: [{ model: 'x' }], usage: [{ date: '2026-07-01', tokens: 5 }] });
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('usage') && e.includes('not supported')));
+});
+
+test('validateUsageData tolerates rows/usage when daily rows are present', () => {
+    const result = validateUsageData({
+        totals: { requests: 1 },
+        daily: [{ date: '2026-07-01', requests: 1, tokens: 5 }],
+        rows: [{ date: '2026-07-01', requests: 1 }]
+    });
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
+});
+
+test('validateUsageData accepts hourly-only exports', () => {
+    const result = validateUsageData({
+        totals: { requests: 1 },
+        by_model: [{ model: 'x' }],
+        hourly: [{ date: '2026-07-01T05:00:00', requests: 1, tokens: 5 }]
+    });
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
+});
+
 // ---------------------------------------------------------------------------
 // Date helpers
 // ---------------------------------------------------------------------------
