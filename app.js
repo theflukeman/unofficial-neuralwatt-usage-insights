@@ -3939,5 +3939,10 @@ async function fetchLiveEnergyPricing() {
 
 // START BACKGROUND LOAD FOR OPENROUTER AND NEURALWATT POSTED RATES
 fetchOpenRouterModels();
-fetchNeuralwattPricing();
-loadExternalPricingTables();
+// Load the repo-hosted pricing mirror first, then overlay the live
+// Neuralwatt API on top so the freshest source (the API) always wins
+// deterministically. Previously both fired concurrently and merged into
+// NEURALWATT_MODEL_PRICING with a nondeterministic last-writer-wins.
+loadExternalPricingTables().then(() => {
+    fetchNeuralwattPricing();
+});
