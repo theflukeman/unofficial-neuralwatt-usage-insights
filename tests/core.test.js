@@ -13,6 +13,7 @@ import {
     parseDateLocal,
     isDateOnly,
     formatDateTable,
+    estimateTokenSplit,
     getCalculatedCosts,
     validateEnergyBenchmarksPayload
 } from '../lib/core.js';
@@ -165,6 +166,20 @@ test('formatDateTable renders short month + day for date-only', () => {
     const out = formatDateTable('2026-07-31');
     assert.match(out, /Jul/i);
     assert.match(out, /31/);
+});
+
+// ---------------------------------------------------------------------------
+// estimateTokenSplit (Phase 4.4 contract: shared split estimation)
+// ---------------------------------------------------------------------------
+test('estimateTokenSplit applies the aggregate completion ratio', () => {
+    const s = estimateTokenSplit(1000, 800, 200);
+    assert.equal(s.promptTokens, 800);
+    assert.equal(s.completionTokens, 200);
+});
+
+test('estimateTokenSplit handles zero tokens and zero totals', () => {
+    assert.deepEqual(estimateTokenSplit(0, 800, 200), { promptTokens: 0, completionTokens: 0 });
+    assert.deepEqual(estimateTokenSplit(1000, 0, 0), { promptTokens: 1000, completionTokens: 0 });
 });
 
 // ---------------------------------------------------------------------------

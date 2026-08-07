@@ -1418,6 +1418,21 @@ const TOKENS_PER_MILLION = 1000000;
 // Watt-hours per kilowatt-hour (used to render Wh in the logs/CSV).
 const WH_PER_KWH = 1000;
 
+// Estimate the prompt/completion split of a token slice by applying the
+// period's aggregate completion ratio (the exports only carry the split at
+// the totals level; day-level splits are estimated per the methodology note).
+// Shared by the timeline costing, cache-rate renderers, and energy insights.
+function estimateTokenSplit(tokens, promptTokensTotal, completionTokensTotal) {
+    let promptTokens = tokens;
+    let completionTokens = 0;
+    if (tokens > 0 && promptTokensTotal > 0) {
+        const ratio = completionTokensTotal / (promptTokensTotal + completionTokensTotal);
+        completionTokens = tokens * ratio;
+        promptTokens = tokens - completionTokens;
+    }
+    return { promptTokens, completionTokens };
+}
+
 function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionTokensTotal, energyKwh, originalCost, originalTokenCost, originalThirdPartyCost, modelName) {
     // 1. Calculate energy-based cost
     let energyCost = originalCost;
@@ -1430,13 +1445,9 @@ function getCalculatedCosts(tokens, cachedTokens, promptTokensTotal, completionT
     }
 
     // 2. Estimate prompt/completion split for individual slices (fallback if not provided in row)
-    let promptTokens = tokens;
-    let completionTokens = 0;
-    if (tokens > 0 && promptTokensTotal > 0) {
-        const ratio = completionTokensTotal / (promptTokensTotal + completionTokensTotal);
-        completionTokens = tokens * ratio;
-        promptTokens = tokens - completionTokens;
-    }
+    const split = estimateTokenSplit(tokens, promptTokensTotal, completionTokensTotal);
+    let promptTokens = split.promptTokens;
+    let completionTokens = split.completionTokens;
     const uncachedPrompt = Math.max(0, promptTokens - cachedTokens);
 
     // 3. Compute Token Comparison Cost
@@ -1784,7 +1795,14 @@ function updateCalculationsAndRender() {
         const origModel = rawData.by_model.find(x => x.model === itemModelName);
         const refPrompt = origModel ? origModel.prompt_tokens : basePromptTokens;
         const refCompletion = origModel ? origModel.completion_tokens : baseCompletionTokens;
-        
+
+        // Stamp the estimated prompt/completion split on the row so the cache
+        // hit rate (cached / input tokens) and the cache chart use the same
+        // input-token denominator everywhere it is rendered.
+        const rowSplit = estimateTokenSplit(item.tokens || 0, refPrompt, refCompletion);
+        item.prompt_tokens = rowSplit.promptTokens;
+        item.completion_tokens = rowSplit.completionTokens;
+
         const entryCosts = getCalculatedCosts(
             item.tokens,
             item.cached_tokens || 0,
@@ -1816,6 +1834,8 @@ function updateCalculationsAndRender() {
                     date: dateStr,
                     requests: 0,
                     tokens: 0,
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
                     cached_tokens: 0,
                     cost: 0,
                     token_cost: 0,
@@ -1829,6 +1849,8 @@ function updateCalculationsAndRender() {
             }
             grouped[dateStr].requests += d.requests || 0;
             grouped[dateStr].tokens += d.tokens || 0;
+            grouped[dateStr].prompt_tokens += d.prompt_tokens || 0;
+            grouped[dateStr].completion_tokens += d.completion_tokens || 0;
             grouped[dateStr].cached_tokens += d.cached_tokens || 0;
             grouped[dateStr].cost += d.cost || 0;
             grouped[dateStr].token_cost += d.token_cost || 0;
@@ -2324,8 +2346,15 @@ function renderCharts() {
     });
 
     // Chart 2: Token Cache Performance
+    // Cache hit rate = cached / input (prompt) tokens — the same denominator
+    // used by the summary card and model breakdown. The stacked bars show
+    // the input-token split (uncached input + cached input); output tokens
+    // are not part of the cache story and no longer get folded into the
+    // "uncached" bar.
     const cachedTokens = calculatedTimelineSorted.map(d => d.cached_tokens || 0);
-    const hitRates = calculatedTimelineSorted.map(d => d.tokens > 0 ? ((d.cached_tokens || 0) / d.tokens * 100) : 0);
+    const promptTokens = calculatedTimelineSorted.map(d => d.prompt_tokens || d.tokens || 0);
+    const uncachedPromptTokens = promptTokens.map((p, i) => Math.max(0, p - (cachedTokens[i] || 0)));
+    const hitRates = promptTokens.map((p, i) => p > 0 ? ((cachedTokens[i] || 0) / p * 100) : 0);
 
     const ctx2 = document.getElementById('cachePerformanceChart').getContext('2d');
     cachePerformanceChart = new Chart(ctx2, {
@@ -2334,14 +2363,14 @@ function renderCharts() {
             labels: dates,
             datasets: [
                 {
-                    label: 'Uncached Tokens',
-                    data: calculatedTimelineSorted.map(d => d.tokens - (d.cached_tokens || 0)),
+                    label: 'Uncached Input Tokens',
+                    data: uncachedPromptTokens,
                     backgroundColor: chartColors.terracotta,
                     stack: 'Stack 0',
                     order: 2
                 },
                 {
-                    label: 'Cached Tokens',
+                    label: 'Cached Input Tokens',
                     data: cachedTokens,
                     backgroundColor: chartColors.green,
                     stack: 'Stack 0',
@@ -2808,7 +2837,11 @@ function renderComparison() {
     const valuesByModel = {};
     models.forEach(model => {
         const s = allStats[model];
-        const cacheRate = s.tokens > 0 ? ((s.cached_tokens || 0) / s.tokens * 100) : 0;
+        // Cache hit rate uses the input-token denominator, matching the
+        // summary card / model breakdown (per-model completion ratio).
+        const origModel = rawData.by_model.find(x => x.model === model);
+        const split = estimateTokenSplit(s.tokens || 0, origModel ? origModel.prompt_tokens : 0, origModel ? origModel.completion_tokens : 0);
+        const cacheRate = split.promptTokens > 0 ? ((s.cached_tokens || 0) / split.promptTokens * 100) : 0;
         const costPerRequest = s.requests > 0 ? (s.token_cost / s.requests) : 0;
         const costPerMtok = s.tokens > 0 ? (s.token_cost / s.tokens * 1e6) : 0;
         const energyPerRequestMwh = s.requests > 0 ? (s.energy_kwh * 1e6 / s.requests) : 0;
@@ -2873,7 +2906,7 @@ function matchesLogSearch(row, query) {
 // LOGS TABLE RENDER
 function renderLogsTable() {
     let rows = calculatedTimeline.map(d => {
-        const cacheRate = d.tokens > 0 ? ((d.cached_tokens || 0) / d.tokens * 100) : 0;
+        const cacheRate = (d.prompt_tokens || 0) > 0 ? ((d.cached_tokens || 0) / d.prompt_tokens * 100) : 0;
         return {
             dateStr: d.date,
             dateObj: parseDateLocal(d.date),
@@ -3103,7 +3136,7 @@ btnExportCsvSubset.addEventListener('click', () => {
     if (!calculatedTimeline) return;
     
     let rows = calculatedTimeline.map(d => {
-        const cacheRate = d.tokens > 0 ? ((d.cached_tokens || 0) / d.tokens * 100) : 0;
+        const cacheRate = (d.prompt_tokens || 0) > 0 ? ((d.cached_tokens || 0) / d.prompt_tokens * 100) : 0;
         return {
             date: d.date,
             model: d.model || '',
