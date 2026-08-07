@@ -116,24 +116,26 @@ let customTpCacheRate = 0.50; // $/Million tokens
 let customTpOutputRate = 3.00; // $/Million tokens
 
 // Official Neuralwatt token pricing ($/Mtok) from portal.neuralwatt.com/pricing#all-models
+// Cache rates are 10% of the prompt price (Neuralwatt updated 2026-08);
+// DeepSeek V4 Flash is the exception at 20% (0.028 / 0.14 in the posted rates).
 // Phase 3.6: `let` so loadExternalPricingTables() can overwrite these with the
 // contents of data/neuralwatt-pricing.json. The built-in copy is the fallback
 // when the external file cannot be fetched (file:// or offline).
 let NEURALWATT_MODEL_PRICING = {
-    'glm-5.2':            { prompt: 1.45, cache: 0.36, completion: 4.50 },
-    'glm-5.2-fast':       { prompt: 1.45, cache: 0.36, completion: 4.50 },
-    'glm-5.2-short':      { prompt: 1.45, cache: 0.36, completion: 4.50 },
-    'glm-5.2-short-fast': { prompt: 1.45, cache: 0.36, completion: 4.50 },
-    'glm-5.2-short-flex': { prompt: 1.45, cache: 0.36, completion: 4.50 },
-    'gemma-4-31b':        { prompt: 0.14, cache: 0.04, completion: 0.42 },
-    'kimi-k2.6':          { prompt: 0.69, cache: 0.17, completion: 3.22 },
-    'kimi-k2.6-fast':     { prompt: 0.69, cache: 0.17, completion: 3.22 },
-    'kimi-k2.7-code':      { prompt: 0.95, cache: 0.24, completion: 4.00 },
-    'kimi-k2.7-code-flex': { prompt: 0.95, cache: 0.24, completion: 4.00 },
-    'qwen3.5-397b':       { prompt: 0.69, cache: 0.17, completion: 4.14 },
-    'qwen3.5-397b-fast':  { prompt: 0.69, cache: 0.17, completion: 4.14 },
-    'qwen3.6-35b':        { prompt: 0.29, cache: 0.07, completion: 1.15 },
-    'qwen3.6-35b-fast':   { prompt: 0.29, cache: 0.07, completion: 1.15 }
+    'glm-5.2':            { prompt: 1.45, cache: 0.145, completion: 4.50 },
+    'glm-5.2-fast':       { prompt: 1.45, cache: 0.145, completion: 4.50 },
+    'glm-5.2-short':      { prompt: 1.45, cache: 0.145, completion: 4.50 },
+    'glm-5.2-short-fast': { prompt: 1.45, cache: 0.145, completion: 4.50 },
+    'glm-5.2-short-flex': { prompt: 1.45, cache: 0.145, completion: 4.50 },
+    'gemma-4-31b':        { prompt: 0.144, cache: 0.0144, completion: 0.42 },
+    'kimi-k2.6':          { prompt: 0.69, cache: 0.069, completion: 3.22 },
+    'kimi-k2.6-fast':     { prompt: 0.69, cache: 0.069, completion: 3.22 },
+    'kimi-k2.7-code':      { prompt: 0.95, cache: 0.095, completion: 4.00 },
+    'kimi-k2.7-code-flex': { prompt: 0.95, cache: 0.095, completion: 4.00 },
+    'qwen3.5-397b':       { prompt: 0.69, cache: 0.069, completion: 4.14 },
+    'qwen3.5-397b-fast':  { prompt: 0.69, cache: 0.069, completion: 4.14 },
+    'qwen3.6-35b':        { prompt: 0.29, cache: 0.029, completion: 1.15 },
+    'qwen3.6-35b-fast':   { prompt: 0.29, cache: 0.029, completion: 1.15 }
 };
 
 // Official model provider token pricing ($/Mtok) from developer documentation (e.g. docs.z.ai)
@@ -1290,7 +1292,13 @@ async function fetchNeuralwattPricing() {
                     const p = item.metadata.pricing;
                     const prompt = parseFloat(p.input_per_million) || 0;
                     const completion = parseFloat(p.output_per_million) || 0;
-                    let cache = prompt * 0.25;
+                    // Fallback when the API omits the cache field: Neuralwatt's
+                    // cache price is 10% of the prompt price (updated 2026-08);
+                    // DeepSeek V4 Flash is the exception at 20% (0.028 / 0.14).
+                    let cache = prompt * 0.10;
+                    if (item.id && item.id.toLowerCase().includes('deepseek-v4-flash')) {
+                        cache = prompt * 0.20;
+                    }
                     if (p.cached_input_per_million !== undefined && p.cached_input_per_million !== null) {
                         cache = parseFloat(p.cached_input_per_million) || 0;
                     }

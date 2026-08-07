@@ -1,19 +1,19 @@
 {
   "comment": "Official Neuralwatt token pricing ($/Mtok) from portal.neuralwatt.com/pricing#all-models. Edit this file to update rates without touching app.js; app.js falls back to its built-in copy if this file cannot be fetched (e.g. file:// or offline).",
   "pricing": {
-    "glm-5.2":            { "prompt": 1.45, "cache": 0.36, "completion": 4.50 },
-    "glm-5.2-fast":       { "prompt": 1.45, "cache": 0.36, "completion": 4.50 },
-    "glm-5.2-short":      { "prompt": 1.45, "cache": 0.36, "completion": 4.50 },
-    "glm-5.2-short-fast": { "prompt": 1.45, "cache": 0.36, "completion": 4.50 },
-    "glm-5.2-short-flex": { "prompt": 1.45, "cache": 0.36, "completion": 4.50 },
-    "gemma-4-31b":        { "prompt": 0.14, "cache": 0.04, "completion": 0.42 },
-    "kimi-k2.6":          { "prompt": 0.69, "cache": 0.17, "completion": 3.22 },
-    "kimi-k2.6-fast":     { "prompt": 0.69, "cache": 0.17, "completion": 3.22 },
-    "kimi-k2.7-code":      { "prompt": 0.95, "cache": 0.24, "completion": 4.00 },
-    "kimi-k2.7-code-flex": { "prompt": 0.95, "cache": 0.24, "completion": 4.00 },
-    "qwen3.5-397b":       { "prompt": 0.69, "cache": 0.17, "completion": 4.14 },
-    "qwen3.5-397b-fast":  { "prompt": 0.69, "cache": 0.17, "completion": 4.14 },
-    "qwen3.6-35b":        { "prompt": 0.29, "cache": 0.07, "completion": 1.15 },
-    "qwen3.6-35b-fast":   { "prompt": 0.29, "cache": 0.07, "completion": 1.15 }
+    "glm-5.2":            { "prompt": 1.45, "cache": 0.145, "completion": 4.50 },
+    "glm-5.2-fast":       { "prompt": 1.45, "cache": 0.145, "completion": 4.50 },
+    "glm-5.2-short":      { "prompt": 1.45, "cache": 0.145, "completion": 4.50 },
+    "glm-5.2-short-fast": { "prompt": 1.45, "cache": 0.145, "completion": 4.50 },
+    "glm-5.2-short-flex": { "prompt": 1.45, "cache": 0.145, "completion": 4.50 },
+    "gemma-4-31b":        { "prompt": 0.144, "cache": 0.0144, "completion": 0.42 },
+    "kimi-k2.6":          { "prompt": 0.69, "cache": 0.069, "completion": 3.22 },
+    "kimi-k2.6-fast":     { "prompt": 0.69, "cache": 0.069, "completion": 3.22 },
+    "kimi-k2.7-code":      { "prompt": 0.95, "cache": 0.095, "completion": 4.00 },
+    "kimi-k2.7-code-flex": { "prompt": 0.95, "cache": 0.095, "completion": 4.00 },
+    "qwen3.5-397b":       { "prompt": 0.69, "cache": 0.069, "completion": 4.14 },
+    "qwen3.5-397b-fast":  { "prompt": 0.69, "cache": 0.069, "completion": 4.14 },
+    "qwen3.6-35b":        { "prompt": 0.29, "cache": 0.029, "completion": 1.15 },
+    "qwen3.6-35b-fast":   { "prompt": 0.29, "cache": 0.029, "completion": 1.15 }
   }
 }
