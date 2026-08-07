@@ -57,6 +57,7 @@ const valCachePercent = document.getElementById('val-cache-percent');
 const barCacheFill = document.getElementById('bar-cache-fill');
 const valTokensSplit = document.getElementById('val-tokens-split');
 const valEnergyCost = document.getElementById('val-energy-cost');
+const valEnergyCostSource = document.getElementById('val-energy-cost-source');
 const valSavingsAmount = document.getElementById('val-savings-amount');
 const valSavingsPct = document.getElementById('val-savings-pct');
 const valTokenCostComparison = document.getElementById('val-token-cost-comparison');
@@ -2082,6 +2083,35 @@ function renderSummaryStats() {
     valSavingsPct.textContent = `${Math.abs(t.savingsPct).toFixed(1)}%`;
     valSavingsAmount.classList.toggle('savings-negative', isNegativeSavings);
     valSavingsPct.classList.toggle('savings-badge-negative', isNegativeSavings);
+
+    // Label the energy-cost base so the headline number is never mistaken
+    // for the billed amount: the dashboard simulates cost from the selected
+    // $/kWh rate (flat / plan / custom) and only 'json' mode shows the
+    // export's own cost figure. Flex models get a 65% energy discount.
+    if (valEnergyCostSource) {
+        const kwhRate = getEnergyKwhRate();
+        const planLabels = {
+            'flat-10': 'Flat $10.00/kWh',
+            'plan-basic': 'Basic Plan $8.50/kWh',
+            'plan-std': 'Standard Plan $8.00/kWh',
+            'plan-pro': 'Pro Plan $7.50/kWh',
+            'plan-basic-yr': 'Basic Annual ~$7.08/kWh',
+            'plan-std-yr': 'Standard Annual ~$6.67/kWh',
+            'plan-pro-yr': 'Pro Annual $6.25/kWh'
+        };
+        let sourceLabel = '';
+        if (costCalcMode === 'json') {
+            sourceLabel = 'Actual cost from export';
+        } else if (costCalcMode === 'custom') {
+            sourceLabel = `Simulated @ $${customKwhRate.toFixed(2)}/kWh (custom)`;
+        } else if (kwhRate !== null && planLabels[costCalcMode]) {
+            sourceLabel = `Simulated @ $${kwhRate.toFixed(2)}/kWh (${planLabels[costCalcMode]})`;
+        }
+        if (sourceLabel.startsWith('Simulated') && (rawData.available_models || []).some(m => m.toLowerCase().includes('flex'))) {
+            sourceLabel += ' · flex models ×0.65';
+        }
+        valEnergyCostSource.textContent = sourceLabel;
+    }
     
     let rateLabel = "Token compare rate";
     if (thirdPartyCompareRate === 'auto-match' || thirdPartyCompareRate === 'auto-match-openrouter') {
