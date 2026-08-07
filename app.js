@@ -189,6 +189,7 @@ let openRouterModels = [];
 let calculatedTotals = {};
 let calculatedTimeline = [];
 let calculatedTimelineSorted = [];
+let calculatedLogRows = []; // per-model (ungrouped) costed rows for the logs table / CSV
 let perModelTimeline = []; // per-model (ungrouped) costed rows for chart toggle
 let breakdownByModel = false; // "Breakdown by Model" chart toggle state
 
@@ -1870,6 +1871,11 @@ function updateCalculationsAndRender() {
     // Per-model (ungrouped) timeline for the "Breakdown by Model" chart toggle.
     perModelTimeline = costedTimeline;
 
+    // Granular logs / CSV use the per-model rows rather than the date-grouped
+    // aggregate: grouping drops the `model` field, which would leave the Model
+    // column blank and make multi-model CSV exports indistinguishable by model.
+    calculatedLogRows = costedTimeline;
+
     // Sort timeline ascending for charts
     calculatedTimelineSorted = [...calculatedTimeline].sort((a, b) => parseDateLocal(a.date) - parseDateLocal(b.date));
 
@@ -2905,7 +2911,7 @@ function matchesLogSearch(row, query) {
 
 // LOGS TABLE RENDER
 function renderLogsTable() {
-    let rows = calculatedTimeline.map(d => {
+    let rows = calculatedLogRows.map(d => {
         const cacheRate = (d.prompt_tokens || 0) > 0 ? ((d.cached_tokens || 0) / d.prompt_tokens * 100) : 0;
         return {
             dateStr: d.date,
@@ -2955,8 +2961,9 @@ function renderLogsTable() {
         return;
     }
 
-    // Show the Model column only when multiple models are loaded — when a
-    // single model is selected/filtered it would be repetitive.
+    // Show the Model column only when multiple models are loaded. Rows are
+    // per-model-per-date (calculatedLogRows), so the column is populated;
+    // with a single model it would be repetitive.
     const showModelCol = loadedFiles.length > 1;
     document.querySelectorAll('#logs-table .log-model-col').forEach(el => {
         el.style.display = showModelCol ? '' : 'none';
@@ -3133,9 +3140,9 @@ modelTableHeaders.forEach(th => {
 
 // CSV SUBSET EXPORT
 btnExportCsvSubset.addEventListener('click', () => {
-    if (!calculatedTimeline) return;
+    if (!calculatedLogRows) return;
     
-    let rows = calculatedTimeline.map(d => {
+    let rows = calculatedLogRows.map(d => {
         const cacheRate = (d.prompt_tokens || 0) > 0 ? ((d.cached_tokens || 0) / d.prompt_tokens * 100) : 0;
         return {
             date: d.date,
@@ -3168,11 +3175,12 @@ btnExportCsvSubset.addEventListener('click', () => {
         return 0;
     });
 
-    const headers = ['Time', 'Requests', 'Tokens', 'Cached Tokens', 'Cache Hit Rate %', 'Energy Cost (USD)', 'Standard Cost (USD)', 'Est. Savings (USD)', 'Energy (Wh)', 'Carbon (g CO2)'];
+    const headers = ['Time', 'Model', 'Requests', 'Tokens', 'Cached Tokens', 'Cache Hit Rate %', 'Energy Cost (USD)', 'Standard Cost (USD)', 'Est. Savings (USD)', 'Energy (Wh)', 'Carbon (g CO2)'];
     const csvContent = [
         headers.map(csvEscape).join(','),
         ...rows.map(r => [
             r.date,
+            r.model,
             r.requests,
             r.tokens,
             r.cached,
