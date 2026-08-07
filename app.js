@@ -3327,15 +3327,38 @@ function renderEnergyInsights() {
     }
 
     // 1. Determine User Request Profile & Band if rawData available
+    // Honors the active model + date-range filters so the profile matches
+    // the rest of the dashboard (previously it used the full-period,
+    // all-model rawData.totals regardless of the filters applied above).
     let userAvgPromptTokens = 0;
     let userBand = '-';
     let userActualMwhPerReq = null;
     let activeModelEntry = null;
+    let profileModelsBlend = []; // { model, reqs } for the blended benchmark
 
-    if (rawData && rawData.totals.requests > 0) {
-        userAvgPromptTokens = Math.round(rawData.totals.prompt_tokens / rawData.totals.requests);
-        userBand = getPromptBandLabel(userAvgPromptTokens);
-        userActualMwhPerReq = ((rawData.totals.energy_kwh * 1000000) / rawData.totals.requests);
+    if (rawData && rawData.daily && rawData.daily.length > 0) {
+        const startDate = filterStartDate ? new Date(filterStartDate + 'T00:00:00') : null;
+        const endDate = filterEndDate ? new Date(filterEndDate + 'T23:59:59') : null;
+        const filteredStats = buildModelStats(startDate, endDate);
+        const profileModels = []; // { model, reqs } for the blended benchmark
+        let reqs = 0;
+        let promptTokens = 0;
+        let energyKwh = 0;
+        Object.values(filteredStats).forEach(m => {
+            if (selectedModel && m.model !== selectedModel) return;
+            reqs += m.requests;
+            energyKwh += m.energy_kwh;
+            profileModels.push({ model: m.model, reqs: m.requests });
+            const origModel = rawData.by_model.find(x => x.model === m.model);
+            const split = estimateTokenSplit(m.tokens || 0, origModel ? origModel.prompt_tokens : 0, origModel ? origModel.completion_tokens : 0);
+            promptTokens += split.promptTokens;
+        });
+        if (reqs > 0) {
+            userAvgPromptTokens = Math.round(promptTokens / reqs);
+            userBand = getPromptBandLabel(userAvgPromptTokens);
+            userActualMwhPerReq = ((energyKwh * 1000000) / reqs);
+        }
+        profileModelsBlend = profileModels;
     }
 
     if (selectedModel) {
@@ -3391,10 +3414,43 @@ function renderEnergyInsights() {
 
     if (userActualMwhPerReq !== null) {
         valUserMwhReq.textContent = `${userActualMwhPerReq.toFixed(1)} mWh`;
-        if (targetModelForStat && targetModelForStat.weightedMwh > 0) {
-            const diffPct = ((userActualMwhPerReq - targetModelForStat.weightedMwh) / targetModelForStat.weightedMwh) * 100;
+
+        // Reference for the % comparison: when the profile spans one model
+        // (single-model filter or a single loaded model) compare against that
+        // model's telemetry average; when it spans several models, compare
+        // against the request-share-weighted blend of each loaded model's
+        // benchmark average instead of a single (first) model's.
+        let refMwh = null;
+        let refLabel = '';
+        if (selectedModel || profileModelsBlend.length <= 1) {
+            const refEntry = activeModelEntry
+                ? benchmarkData.find(b => b.id === activeModelEntry.id || b.model === activeModelEntry.model)
+                : targetModelForStat;
+            if (refEntry && refEntry.weightedMwh > 0) {
+                refMwh = refEntry.weightedMwh;
+                refLabel = refEntry.model;
+            }
+        } else {
+            let total = 0;
+            let sum = 0;
+            profileModelsBlend.forEach(pm => {
+                const b = getEnergyBenchmarkForModel(pm.model);
+                const entry = b ? benchmarkData.find(x => x.id === b.id || x.model === b.model) : null;
+                if (entry && entry.weightedMwh > 0) {
+                    sum += entry.weightedMwh * pm.reqs;
+                    total += pm.reqs;
+                }
+            });
+            if (total > 0) {
+                refMwh = sum / total;
+                refLabel = 'blended benchmark';
+            }
+        }
+
+        if (refMwh !== null && refMwh > 0) {
+            const diffPct = ((userActualMwhPerReq - refMwh) / refMwh) * 100;
             const diffSign = diffPct >= 0 ? '+' : '';
-            valUserMwhVsBenchmark.textContent = `${diffSign}${diffPct.toFixed(1)}% vs ${targetModelForStat.model} avg`;
+            valUserMwhVsBenchmark.textContent = `${diffSign}${diffPct.toFixed(1)}% vs ${refLabel} avg`;
         } else {
             valUserMwhVsBenchmark.textContent = 'Actual measured from JSON export';
         }
