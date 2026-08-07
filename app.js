@@ -2086,9 +2086,11 @@ function renderSummaryStats() {
     // Requests
     valRequests.textContent = formatNumber(t.requests);
     if (valRequestsSub) {
-        valRequestsSub.textContent = t.third_party_requests > 0 
-            ? `${formatNumber(t.third_party_requests)} third-party requests` 
-            : '100% self-hosted requests';
+        // Only report third-party requests when the export actually reports
+        // them; zero/null must not be presented as "100% self-hosted".
+        valRequestsSub.textContent = t.third_party_requests > 0
+            ? `${formatNumber(t.third_party_requests)} third-party requests`
+            : '';
     }
 
     // Tokens
