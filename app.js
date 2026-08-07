@@ -570,6 +570,24 @@ function populateOpenRouterOptions() {
         option.textContent = `${m.name} (In: $${promptM} | Cache: $${cacheM} | Out: $${compM} / M)`;
         optgroup.appendChild(option);
     });
+
+    // Re-sync the dropdown selection now that live options exist. On a fresh
+    // load with a restored session, syncControlsFromState() ran before the
+    // OpenRouter fetch finished, so an OpenRouter-model rate was stored in
+    // state but could not be selected in the DOM — the visible dropdown and
+    // the actual calculation would diverge. A stale ID (model no longer
+    // listed) falls back to auto-match rather than silently keeping a rate
+    // that can no longer resolve.
+    if (thirdPartyCompareRate && thirdPartyCompareRate !== 'auto-match') {
+        const optionExists = Array.from(thirdPartyProviderSelect.options).some(o => o.value === thirdPartyCompareRate);
+        if (optionExists) {
+            thirdPartyProviderSelect.value = thirdPartyCompareRate;
+        } else {
+            thirdPartyCompareRate = 'auto-match';
+            thirdPartyProviderSelect.value = 'auto-match';
+            if (rawData) updateCalculationsAndRender();
+        }
+    }
 }
 
 // FILE DROP & SELECTION EVENTS
@@ -1660,7 +1678,12 @@ function updateCalculationsAndRender() {
     }
 
     let totalCompareCost = 0;
-    if (thirdPartyCompareRate.startsWith('auto-match') && !selectedModel) {
+    // With "All Models" selected, always resolve the compare rate per model.
+    // Name-matched provider rates (DeepInfra/Novita) and flex discounts only
+    // apply when the real model name reaches getCalculatedCosts; aggregating
+    // with modelName='' silently falls back to the JSON token cost for every
+    // rate mode, so the summary card would ignore the dropdown selection.
+    if (!selectedModel) {
         const models = Object.values(modelStats);
         if (models.length > 0) {
             models.forEach(m => {
